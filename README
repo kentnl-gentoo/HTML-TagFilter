@@ -24,7 +24,7 @@ make
 make test
 make install
 
-Please use https://rt.cpan.org/ to report bugs, omissions, cross-site attacks
+Please use https://rt.cpan.org/ to report bugs & omissions, describe cross-site attacks
 that get through, or just to suggest improvements.
 
 Copyright 2001-3 William Ross (wross@cpan.org)

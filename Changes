@@ -9,7 +9,7 @@ Revision history for Perl extension TagFilter.
 0.03  Tues Sep 18 2001
     Changed from trying to work out meaning of empty lists to using 
     reserved words 'any', 'all', 'none'. 
-    Denial rules work for a while.
+    Denial rules work sporadically.
 0.04  Wed Sep 19 2001
     Added _check() method to allow testing of values deep in HoHoHo 
     without autovivification and subsequent mess. 
@@ -43,5 +43,17 @@ Revision history for Perl extension TagFilter.
     * all attributes s/javascript:// just in case.
     * bug corrected where 'none' was not magic in rule set, but just 
     treated as another attribute (doh)
+ 0.073  Tues Jul 22 2003
+    * cross-site scripting protection improved: parser allowed to entify
+    again (that was silly), but values for certain vulnerable attributes
+    are subjected to extra tests to ensure urlness not scriptness.
+    * tests added for the xss protection and other recent fixes
+ 0.074  Tues Jul 23 2003
+    * tidied up a bit
+    * extended the default list of xss vulnerable tags to: src, lowsrc, 
+    href, background, cite. Also made it user-modifiable in subclass.
+    * a few remaining variables turned into subs to facilitate subclassing
+ 0.075  Wed Oct 8 2003
+    * noticed that cross-site safeguards were preventing mailto: hrefs from 
+    getting through. Corrected.
     
-   

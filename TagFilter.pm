@@ -4,7 +4,7 @@ use strict;
 use base qw(HTML::Parser);
 use vars qw($VERSION);
 
-$VERSION = '0.073';  # $Date: 2003/07/22 $
+$VERSION = '0.075';  # $Date: 2003/10/08 $
 
 =head1 NAME
 
@@ -117,7 +117,11 @@ Set strip_comments to 1 and comments will be stripped. If you don't, they won't.
 
 =item skip_xss_protection
 
-Unless you set skip_xss_protection to 1, the filter will postprocess some of its output to protect against common cross-site scripting attacks. It will entify any < and > in non-tag text, entify quotes in attribute values (the Parser will have unencoded them) and check that href and src values look suitably like urls. Be warned, though: it's a fast-moving threat, and you can assume we are two steps behind the latest innovations even if your filter is up to date.
+Unless you set skip_xss_protection to 1, the filter will postprocess some of its output to protect against common cross-site scripting attacks. 
+
+It will entify any < and > in non-tag text, entify quotes in attribute values (the Parser will have unencoded them) and strip out values for vulnerable attributes if they don't look suitably like urls. By default these attributes are checked: src, lowsrc, href, background and cite. You can replace that list (not extend it) at any time:
+
+    $filter->xss_risky_attributes( qw(your list of attributes) );
 
 =back
 
@@ -231,37 +235,39 @@ will just remove all the attributes from <p> tags. Not very pretty, I know. It's
 
 =cut
 
-my $errstr;
+sub allowed_by_default {
+	return {
+		h1 => { none => [] },
+		h2 => { none => [] },
+		h3 => { none => [] },
+		h4 => { none => [] },
+		h5 => { none => [] },
+		p => { none => [] },
+		a => { href => [], name => [], target => [] },
+		br => { clear => [qw(left right all)] },
+		ul =>{ type => [] },
+		li =>{ type => [] },
+		ol => { none => [] },
+		em => { none => [] },
+		i => { none => [] },
+		b => { none => [] },
+		tt => { none => [] },
+		pre => { none => [] },
+		code => { none => [] },
+		hr => { none => [] },
+		blockquote => { none => [] },
+		img => { src => [], height => [], width => [], alt => [], align => [] },
+		any => { align => [qw(left right center)]  },
+	};
+}
 
-my $allowed_by_default = {
-    h1 => { none => [] },
-    h2 => { none => [] },
-    h3 => { none => [] },
-    h4 => { none => [] },
-    h5 => { none => [] },
-    p => { none => [] },
-    a => { href => [], name => [], target => [] },
-    br => { clear => [qw(left right all)] },
-    ul =>{ type => [] },
-    li =>{ type => [] },
-    ol => { none => [] },
-    em => { none => [] },
-    i => { none => [] },
-    b => { none => [] },
-    tt => { none => [] },
-    pre => { none => [] },
-    code => { none => [] },
-    hr => { none => [] },
-    blockquote => { none => [] },
-    img => { src => [], height => [], width => [], alt => [], align => [] },
-    any => { align => [qw(left right center)]  },
-};
-
-my $denied_by_default = {
-    blink => { all => [] },
-    marquee => { all => [] },
-    any => { style => [], class => [], onMouseover => [], onClick => [], onMouseout => [], },
-};
+sub denied_by_default {
+	return {
+		blink => { all => [] },
+		marquee => { all => [] },
+		any => { style => [], class => [], onMouseover => [], onClick => [], onMouseout => [], },
+	};
+}
 
 sub new {
     my $class = shift;
@@ -280,8 +286,8 @@ sub new {
     $filter->{_log} = ();
     $filter->{_error} = ();
 
-    $config->{allow} ||= $allowed_by_default;
-    $config->{deny} ||= $denied_by_default;
+    $config->{allow} ||= allowed_by_default();
+    $config->{deny} ||= denied_by_default();
 
     $filter->allow_tags(delete $config->{allow});
     $filter->deny_tags(delete $config->{deny});
@@ -417,7 +423,12 @@ sub _xss_clean_text {
     return $text;
 }
 
-sub xss_risky_attributes { return { map { $_=>1 } qw(src href) } }
+sub xss_risky_attributes { 
+	my $filter = shift;
+	@{ $filter->{_xss_risky} } = @_ if @_;
+	$filter->{_xss_risky} ||= [qw(src href cite lowsrc background)];
+	return { map { $_=>1 } @{ $filter->{_xss_risky} } };
+}
 
 # _xss_clean_attribute(): the default action carried out on attribute values. defends against basic XSS by quoting "
 
@@ -435,6 +446,7 @@ sub _xss_clean_href {
     my ($filter, $text, $att) = @_;
     return $text unless $filter->{_settings}->{xss};
 	return $text if $text !~ /:/s;
+	return $text if $text =~ /^mailto:/s;
 	return $text if $text =~ /^http:\/\//s;
 	return $text if $text =~ /^https:\/\//s;
 	return $text if $text =~ /^ftp:\/\//s;
@@ -635,13 +647,9 @@ More sanity checks on incoming rules
 
 Simpler rule-definition interface
 
-Complex rules. The long term goal is that someone can supply a rule like "remove all images where height or width is missing" or "change all font tags where size="2" to <span class="small">.
-
-Which will be hard. For a start, HTML::Parser doesn't see paired start and close tags, which would be required for conditional actions.
+Complex rules. The long term goal is that someone can supply a rule like "remove all images where height or width is missing" or "change all font tags where size="2" to <span class="small">. Which will be hard. For a start, HTML::Parser doesn't see paired start and close tags, which would be required for conditional actions.
 
 An option to speed up operations by working only at the tag level and using HTML::Parser's built-in screens.
-
-Some tests.
 
 =head1 REQUIRES
 
@@ -660,5 +668,7 @@ William Ross, wross@cpan.org
 Copyright 2001-3 William Ross
 
 This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+
+Please use https://rt.cpan.org/ to report bugs & omissions, describe cross-site attacks that get through, or suggest improvements.
 
 =cut
