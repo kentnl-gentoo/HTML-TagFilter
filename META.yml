@@ -1,6 +1,6 @@
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         HTML-TagFilter
-version:      0.09
+version:      0.091
 version_from: TagFilter.pm
 installdirs:  site
 requires:

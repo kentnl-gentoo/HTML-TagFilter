@@ -6,7 +6,7 @@ use URI::Escape;
 
 use vars qw($VERSION);
 
-$VERSION = '0.09';
+$VERSION = '0.091';
 
 =head1 NAME
 
@@ -599,8 +599,9 @@ sub _is_risky {
 sub _obfuscate_mailto {
 	my ($self, $address) = @_;
 	return $address unless $self->{_settings}->{mailto};
-	return $address unless $address =~ /^mailto:/;
-	return join '', map { uri_escape($_, "\0-\377") } split //, $address;
+	return $address unless $address =~ /^mailto:(.*)/;
+	my $garbled = join '', map { uri_escape($_, "\0-\377") } split //, $1;
+	return "mailto:$garbled";
 }
 
 # _check(): a private function to test for a value buried deep in a HoHoHo 

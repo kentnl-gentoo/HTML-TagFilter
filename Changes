@@ -1,4 +1,8 @@
-Revision history for Perl extension TagFilter.
+Revision history for Perl extension HTML::TagFilter.
+
+0.091 Fri Aug 13 2004
+    - silly bug fixed in mailto obfuscation (the mailto: part has to be left
+      in clear, as any fule kno).
 
 0.09 Fri Jul 9 2004
     - mailto: obfuscation added. switchable-off.
