@@ -4,5 +4,8 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'		=> 'HTML::TagFilter',
     'VERSION_FROM'	=> 'TagFilter.pm', # finds $VERSION
-    'PREREQ_PM'		=> {HTML::Parser => 1.0}, # e.g., Module::Name => 1.1
+    'PREREQ_PM'		=> {
+        HTML::Parser => 1.0,
+        URI::Escape => 0,
+    },
 );

@@ -2,13 +2,15 @@ package HTML::TagFilter;
 use strict;
 
 use base qw(HTML::Parser);
+use URI::Escape;
+
 use vars qw($VERSION);
 
-$VERSION = '0.08';  # $Date: 2003/10/08 $
+$VERSION = '0.09';
 
 =head1 NAME
 
-HTML::TagFilter - An HTML::Parser-based selective tag remover
+HTML::TagFilter - A fine-grained html-filter, xss-blocker and mailto-obfuscator
 
 =head1 SYNOPSIS
 
@@ -25,6 +27,11 @@ HTML::TagFilter - An HTML::Parser-based selective tag remover
         strip_comments => 1, 
         echo => 1,
         skip_xss_protection => 1,
+        skip_ltgt_entification => 1,
+        skip_mailto_entification => 1,
+        xss_risky_attributes => [...],
+        xss_permitted_protocols => [...],
+        xss_allow_local_links => 1,
     );
     
     $tf->parse($some_html);
@@ -40,7 +47,7 @@ HTML::TagFilter is a subclass of HTML::Parser with a single purpose: it will rem
 
 Tags which are not allowed are removed. Tags which are allowed are trimmed down to only the attributes which are allowed for each tag. It is possible to allow all or no attributes from a tag, or to allow all or no values for an attribute, and so on.
 
-(As of version 0.73 the filter will also guard against some common cross-site scripting attacks, unless you tell it not to).
+The filter will also guard against cross-site scripting attacks and obfuscate any mailto:email addresses, unless you tell it not to.
 
 The original purpose for this was to screen user input. In that setting you'll often find that just using:
 
@@ -49,7 +56,7 @@ The original purpose for this was to screen user input. In that setting you'll o
 
 will do. However, it can also be used for display processes (eg text-only translation) or cleanup (eg removal of old javascript). In those cases you'll probably want to override the default rule set with a small number of denial rules. 
 
-    my $filter = HTML::TagFilter->new(deny => {img => {'all'}});
+    my $self = HTML::TagFilter->new(deny => {img => {'all'}});
     print $tf->filter($my_text);
 
 Will strip out all images, for example, but leave everything else untouched.
@@ -62,44 +69,45 @@ Creating the rule set is fairly simple. You have three options:
 
 =head2 use the defaults
 
-which will produce safe but still formatted html, without images, tables, javascript or much else apart from inline text formatting and links.
+which will produce safe but still formatted html, without tables, javascript or much else apart from inline text formatting, links and images.
 
 =head2 selectively override the defaults
 
-use the allow_tags and deny_tags methods to pass in one or more tag settings. eg:
+use the allow_tags and deny_tags methods to pass in one or more additional tag settings. eg:
 
-    $filter->allow_tags({ p => { class=> ['lurid','sombre','plain']} });
+    $self->allow_tags({ p => { class=> ['lurid','sombre','plain']} });
+    $self->deny_tags({ img => { all => [] });
 
-will mean that all attributes other than class="lurid|sombre|plain" will be removed from <p> tags, but the other default rules will remain unchanged. See below for more about specifying rules.
+will mean that all attributes other than class="lurid|sombre|plain" will be removed from <p> tags, but the other default rules will remain unchanged. See below for more about how to specify rules.
 
 =head2 supply your own configuration
 
 To override the defaults completely, supply the constructor with some rules:
 
-    my $filter = HTML::TagFilter->new( 
+    my $self = HTML::TagFilter->new( 
         allow=>{ p => { class=> ['lurid','sombre','plain']} }
     );
 
 In this case only the rules you supply will be applied: the defaults are ignored. You can achieve the same thing after construction by first clearing the rule set:
 
-    my $filter = HTML::TagFilter->new();
-    $filter->clear_rules();
-    $filter->allow_tags({ p => { align=> ['left','right','center']} });
+    my $self = HTML::TagFilter->new();
+    $self->clear_rules();
+    $self->allow_tags({ p => { align=> ['left','right','center']} });
 
-Future versions are intended to offer a more sophisticated rule system, allowing you to specify combinations of attributes, ranges for values and generally match names in a more fuzzy way. 
-
-The simple hash interface will continue to work for the foreseeable future, though.
+Future versions are intended to offer a more sophisticated rule system, allowing you to specify combinations of attributes, ranges for values and generally match names in a more fuzzy way.
 
 =head1 CONFIGURATION: BEHAVIOURS
 
-There are currently four switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
+There are currently six switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off':
 
-    my $tf = HTML::TagFilter->new(
-        log_rejects => 1,
-        strip_comments => 1,
-        echo => 1,
-        skip_xss_protection => 1,
-    );
+  my $tf = HTML::TagFilter->new(
+    log_rejects => 1,
+    strip_comments => 1,
+    echo => 1,
+    skip_xss_protection => 1,
+    skip_ltgt_entification => 1,
+    skip_mailto_entification => 1,
+  );
     
 =over 4
 
@@ -121,7 +129,30 @@ Unless you set skip_xss_protection to 1, the filter will postprocess some of its
 
 It will entify any < and > in non-tag text, entify quotes in attribute values (the Parser will have unencoded them) and strip out values for vulnerable attributes if they don't look suitably like urls. By default these attributes are checked: src, lowsrc, href, background and cite. You can replace that list (not extend it) at any time:
 
-    $filter->xss_risky_attributes( qw(your list of attributes) );
+    $self->xss_risky_attributes( qw(your list of attributes) );
+
+=item skip_ltgt_entification
+
+Disables the entification of < and > even if cross-site protection is on.
+
+=item skip_mailto_entification
+
+Unless you specify otherwise, any mailto:url seen by the filter is completely turned into html entities. <a href="mailto:wross@cpan.org">will</a> becomes <a href="%6D%61%69%6C%74%6F%3A%77%72%6F%73%73%40%63%70%61%6E%2E%6F%72%67">will</a>
+
+This should defeat most email-harvesting software, but note that it has no effect on the text of your link, only its address. Links like <a href="mailto:wross@cpan.org">wross@cpan.org</a> are only partly obscured.
+
+=item other constructor parameters
+
+You can also supply values that will be used as default values for the methods of the same name:
+
+  xss_risky_attributes
+  xss_permitted_protocols
+  
+each of which expects a list of strings, and 
+
+  xss_allow_local_links
+
+which wants a single true or false value.
 
 =back
 
@@ -167,43 +198,43 @@ There are three reserved words: 'any and 'none' stand respectively for 'anything
 
 For example:
 
-    $filter->allow_tags({ p => { any => [] });
+    $self->allow_tags({ p => { any => [] });
 
 Will permit <p> tags with any attributes. For clarity's sake it may be shortened to:
 
-    $filter->allow_tags({ p => { 'any' });
+    $self->allow_tags({ p => { 'any' });
 
 but note that you'll get a warning about the odd number of hash elements if -w is on, and in the absence of the => the quotes are required. And
 
-    $filter->allow_tags({ p => { none => [] });
+    $self->allow_tags({ p => { none => [] });
 
 Will allow <p> tags to remain in the text, but all attributes will be removed. The same rules apply at all levels in the tag/attribute/value hierarchy, so you can say things like:
 
-    $filter->allow_tags({ any => { align => [qw(left center right)] });
-    $filter->allow_tags({ p => { align => ['any'] });
+    $self->allow_tags({ any => { align => [qw(left center right)] });
+    $self->allow_tags({ p => { align => ['any'] });
 
 =head2 examples
 
 To indicate that a link destination is ok and you don't mind what value it takes:
 
-    $filter->allow_tags({ a => { 'href' } });
+    $self->allow_tags({ a => { 'href' } });
 
 To limit the values an attribute can take:
 
-    $filter->allow_tags({ a => { class => [qw(big small middling)] } });
+    $self->allow_tags({ a => { class => [qw(big small middling)] } });
 
 To clear all permissions:
 
-    $filter->allow_tags({});
+    $self->allow_tags({});
 
 To remove all onClicks from links but allow all targets:
 
-    $filter->allow_tags({ a => { onClick => ['none'], target => [], } });
+    $self->allow_tags({ a => { onClick => ['none'], target => [], } });
 
 You can combine allows and denies to create 'unless' rules:
 
-    $filter->allow_tags({ a => { any => [] } });
-    $filter->deny_tags({ a => { onClick => [] } });
+    $self->allow_tags({ a => { any => [] } });
+    $self->deny_tags({ a => { onClick => [] } });
 
 Will remove only the onClick attribute of a link, allowing everything else through. If this was your only purpose, you could achieve the same thing just with the denial rule and an empty permission set, but if there's other stuff going on then you probably need this combination.
 
@@ -265,7 +296,7 @@ sub denied_by_default {
 	return {
 		blink => { all => [] },
 		marquee => { all => [] },
-		any => { style => [], class => [], onMouseover => [], onClick => [], onMouseout => [], },
+		any => { style => [], onMouseover => [], onClick => [], onMouseout => [], },
 	};
 }
 
@@ -273,33 +304,34 @@ sub new {
     my $class = shift;
     my $config = {@_};
     
-    my $filter = $class->SUPER::new(api_version => 3);
+    my $self = $class->SUPER::new(api_version => 3);
 
-    $filter->SUPER::handler(start => "filter_start", 'self, tagname, attr, attrseq');
-    $filter->SUPER::handler(end =>  "filter_end", 'self, tagname');
-    $filter->SUPER::handler(default => "clean_text", "self, text");
-    $filter->SUPER::handler(comment => "") if delete $config->{strip_comments};
+    $self->SUPER::handler(start => "filter_start", 'self, tagname, attr, attrseq');
+    $self->SUPER::handler(end =>  "filter_end", 'self, tagname');
+    $self->SUPER::handler(default => "clean_text", "self, text");
+    $self->SUPER::handler(comment => "") if delete $config->{strip_comments};
 	
-    $filter->{_allows} = {};
-    $filter->{_denies} = {};
-    $filter->{_settings} = {};
-    $filter->{_log} = ();
-    $filter->{_error} = ();
+    $self->{_allows} = {};
+    $self->{_denies} = {};
+    $self->{_settings} = {};
+    $self->{_log} = ();
+    $self->{_error} = ();
 
     $config->{allow} = allowed_by_default() unless $config->{allow} || $config->{deny};
     $config->{deny} = denied_by_default() unless $config->{allow} || $config->{deny};
 
-    $filter->allow_tags(delete $config->{allow});
-    $filter->deny_tags(delete $config->{deny});
+    $self->allow_tags(delete $config->{allow});
+    $self->deny_tags(delete $config->{deny});
     
-    $filter->{_settings}->{log} = 1 if delete $config->{log_rejects};
-    $filter->{_settings}->{echo} = 1 if delete $config->{echo};
-    $filter->{_settings}->{entify} = 1 unless delete $config->{no_escape};
-    $filter->{_settings}->{xss} = 1 unless delete $config->{skip_xss_protection};
+    $self->{_settings}->{log} = 1 if delete $config->{log_rejects};
+    $self->{_settings}->{echo} = 1 if delete $config->{echo};
+    $self->{_settings}->{xss} = 1 unless delete $config->{skip_xss_protection};
+    $self->{_settings}->{ltgt} = 1 unless delete $config->{skip_ltgt_entification};
+    $self->{_settings}->{mailto} = 1 unless delete $config->{skip_mailto_entification};
     
-    $filter->_log_error("[warning] ignored config field: $_") for keys %$config;
+    $self->_log_error("[warning] ignored unknown config field: $_") for keys %$config;
     
-    return $filter;
+    return $self;
 }
 
 =head1 METHODS
@@ -328,51 +360,54 @@ Note that calling filter() will clear anything that was waiting in the output bu
 =cut
 
 sub filter {
-    my ($filter,$text) = @_;
-    $filter->{output} = '';
-    $filter->parse($text);
-    return $filter->output() unless $filter->{_settings}->{echo};
+    my ($self, $text) = @_;
+    $self->{output} = '';
+    $self->parse($text);
+    return $self->output unless $self->{_settings}->{echo};
 }
 
 =over 4
 
-=item $filter->parse($text);
+=item parse($text);
 
 The parse method is inherited from HTML::Parser, but most of its normal behaviours are subclassed here and the output they normally print is kept for later. The other configuration options that HTML::Parser normally offers are not passed on, at the moment, nor can you override the handler definitions in this module.
 
-=item $filter->output()
+=item output()
 
-calls $filter->eof, returns and clears the output buffer. This will conclude the processing of your text, but you can of course pass a new piece of text to the same parser object and begin again.
+This will return and clear the output buffer. It will conclude the processing of your text, but you can of course pass a new piece of text to the same parser object and begin again.
 
-=item $filter->report()
+=item report()
 
-if called in list context, returns the array of rejected tag/attribute/value combinations. 
-in scalar context returns a more or less readable summary. returns () if logging not enabled. Clears the log.
+If called in list context, returns the array of rejected tag/attribute/value combinations. 
+
+In scalar context returns a more or less readable summary. Returns () if logging not enabled. Clears the log.
 
 =back
 
 =cut
 
 sub output {
-    my $filter = shift;
-    $filter->eof;
-    my $output = $filter->{output};
-    $filter->_log_error("[warning] no output from filter") unless $output;
-    $filter->{output} = '';
+    my $self = shift;
+    $self->eof;
+    my $output = $self->{output};
+    $self->_log_error("[warning] no output from filter") unless $output;
+    $self->{output} = '';
     return $output;
 }
 
 sub report {
-    my $filter = shift;
-    return () unless defined $filter->{_log};
-    my @rejects = @{ $filter->{_log} };
-    $filter->{_log} = ();
+    my $self = shift;
+    return () unless defined $self->{_log};
+    my @rejects = @{ $self->{_log} };
+    $self->{_log} = ();
     return @rejects if wantarray;
 
     my $report = "the following tags and attributes have been stripped:\n";
     for (@rejects) {
         if ($_->{attribute}) {
-            $report .= $_->{attribute} . '="' . $_->{value} . '" from the tag &lt;' . $_->{tag} . "&gt;\n";
+            $report .= $_->{attribute} . '="' . $_->{value} . '" from the tag &lt;' . $_->{tag} . "&gt;";
+            $report .= "(url disallowed)" if $_->{reason} eq 'url';
+            $report .= "\n";
         } else {
             $report .= '&lt;' . $_->{tag} . "&gt;\n";
         }
@@ -380,136 +415,209 @@ sub report {
     return $report;
 }
 
-# _filter_start(): the designated handler for start tags: tests them against the _tag_ok() function
-# and then, if they pass, each of their attributes against the attribute_ok() function. Anything that
-# fails either test is removed, and the remainder if any passed to output.
+=over 4
+
+=item filter_start($tag, $attributes_hashref, $attribute_sequence_listref);
+
+This is the handler for html start tags: it checks the tag against the current set of rules, then checks each attribute and its value. Any text that fails is stripped out: the rest is passed to output.
+
+=item filter_end($tag);
+
+This is the handler for html end tags: it checks the tag against the current set of rules, and passes it to output if it's ok.
+
+=item clean_text($text);
+
+This is the handler for text: anything which is not tag is passed through here before being passed to output. At the moment it only applies some very simple cross-site protection: subclassing this method is an easy way to modify just the text part of your page.
+
+=back
+
+=cut
 
 sub filter_start {
-    my ($filter, $tagname, $attr, $attrseq) = @_;
-    if ($filter->_tag_ok(lc($tagname))) {
-        for (@$attrseq) {
-            unless ($filter->_attribute_ok(lc($tagname), lc($_), lc($$attr{$_}))) {
-                $filter->_log_denied({ tag => $tagname, attribute => $_, value => $$attr{$_} }) if $filter->{_settings}->{log};
-                delete $$attr{$_};
-            }
-        }
-        my $filtered_tag = "<$tagname" . join('', map { " $_=\"" . $filter->_xss_clean_attribute($attr->{$_}, $_) . '"' } grep { exists $attr->{$_} } @$attrseq) . ">";
-        $filter->_add_to_output($filtered_tag);
-    } else {
-        $filter->_log_denied({tag => $tagname}) if $filter->{_settings}->{log};
+    my ($self, $tagname, $attributes, $attribute_sequence) = @_;
+    return unless $self->tag_ok(lc($tagname));
+    for (@$attribute_sequence) {
+        my @data = (lc($tagname), lc($_), lc($attributes->{$_}));      # (tag, attribute, value)
+        delete $attributes->{$_} unless $self->attribute_ok(@data) && $self->url_ok(@data);
     }
+    my $surviving_attributes = join('', map { " $_=\"" . $self->_xss_clean_attribute($attributes->{$_}, $_) . '"' } grep { defined $attributes->{$_} } @$attribute_sequence);
+    $self->add_to_output("<$tagname$surviving_attributes>");
 }
 
-# _filter_end(): the designated handler for end tags: tests them against the _tag_ok() function
-# and passes them to output if they're acceptable.
-
 sub filter_end {
-    my ($filter, $tagname) = @_;
-    $filter->_add_to_output("</$tagname>") if ($filter->_tag_ok(lc($tagname)));
+    my ($self, $tagname) = @_;
+    $self->add_to_output("</$tagname>") if $self->_tag_ok(lc($tagname));
 }
 
 sub clean_text {
-    my ($filter, $text) = @_;
-    $filter->_add_to_output($filter->_xss_clean_text($text));
+    my ($self, $text) = @_;
+    $self->add_to_output($self->_xss_clean_text($text));
 }
-
-# _xss_clean_text(): the default action carried out on non-tag bits of text. defends against basic XSS by entifying < and >.
 
 sub _xss_clean_text {
-    my ($filter, $text) = @_;
-    return $text unless $filter->{_settings}->{xss};
-    $text =~ s/\>/&gt;/gs;
-    $text =~ s/\</&lt;/gs;
+    my ($self, $text) = @_;
+    return $text unless $self->{_settings}->{xss};
+    return $text unless $self->{_settings}->{ltgt};
+    $text =~ s/>/&gt;/gs;
+    $text =~ s/</&lt;/gs;
     return $text;
 }
 
-sub xss_risky_attributes { 
-	my $filter = shift;
-	@{ $filter->{_xss_risky} } = @_ if @_;
-	$filter->{_xss_risky} ||= [qw(src href cite lowsrc background)];
-	return { map { $_=>1 } @{ $filter->{_xss_risky} } };
-}
+=over 4
 
-# _xss_clean_attribute(): the default action carried out on attribute values. defends against basic XSS by quoting "
+=item add_to_output($text);
 
-sub _xss_clean_attribute {
-    my ($filter, $text, $att) = @_;
-    return $text unless $filter->{_settings}->{xss};
-	$text =~ s/"/&quot;/igs;
-	$text =~ s/'/&rsquot;/igs;
-    my $risky = $filter->xss_risky_attributes;
-	return $filter->_xss_clean_href($text, $att) if $risky->{$att};
-    return $text;
-}
+The supplied text is appended to the output buffer (or immediately printed, if echo is on).
 
-sub _xss_clean_href {
-    my ($filter, $text, $att) = @_;
-    return $text unless $filter->{_settings}->{xss};
-	return $text if $text !~ /:/s;
-	return $text if $text =~ /^mailto:/s;
-	return $text if $text =~ /^http:\/\//s;
-	return $text if $text =~ /^https:\/\//s;
-	return $text if $text =~ /^ftp:\/\//s;
-	return $text if $text =~ /^\//s;
-	return $text if $text =~ /^\.\.\//s;
-	$filter->_log_denied("$att failed xss filter: $text");
-	return '';
-}
+=item logging($boolean);
 
-sub _add_to_output {
-    my $filter = shift;
-    if ($filter->{_settings}->{echo}) {
+This provides get-or-set access to the 'log' configuration parameter. Switching logging on or off during parsing will result in incomplete reports, of course.
+
+=item log_denied($refused_tag);
+
+If logging is on, this method will append the supplied failure information to the log. The standard form for this is a hashref that will contain some or all of these keys: 'tag', 'attribute', 'value' and 'reason'.
+
+=back
+
+=cut
+
+sub add_to_output {
+    my $self = shift;
+    if ($self->{_settings}->{echo}) {
         print $_[0];
     } else {
-        $filter->{output} .= $_[0];
+        $self->{output} .= $_[0];
     }
 }
 
-sub _log_denied {
-    my ($filter, $bad_tag) = @_;
-    push @{ $filter->{_log} } , $bad_tag;
+sub logging {
+    my $self = shift;
+    $self->{_settings}->{log} = $_[0] if @_;
+    return $self->{_settings}->{log};
+}
+
+sub log_denied {
+    my ($self, $bad_tag) = @_;
+    return unless $self->logging;
+    push @{ $self->{_log} } , $bad_tag;
+}
+
+=over 4
+
+=item tag_ok($tag);
+
+Returns true if the supplied tag name is allowed in the text. If not, returns false and logs the failure with the reason 'tag'.
+
+=item attribute_ok($tag, $attribute);
+
+Returns true if it that attribute is allowed for that tag, and it is allowed to have the supplied value. If not, returns false and logs the failure with the reason 'attribute'.
+
+=item url_ok($tag, $attributes, $value);
+
+If xss protection is on, we check whether this attribute is a url field, and if it is we check that the url is a url (rather than a script tag or some other naughtiness). Failures are logged with the reason 'url'.
+
+=back
+
+=cut
+
+sub tag_ok {
+    my ($self, $tagname) = @_;
+    my $ok = $self->_tag_ok($tagname);
+    $self->log_denied({tag => $tagname, reason => 'tag' }) unless $ok;
+    return $ok;
 }
 
 sub _tag_ok {
-    my ($filter, $tagname) = @_;
-    return 0 unless ($filter->{_allows} && %{ $filter->{_allows} }) || ($filter->{_denies} && %{ $filter->{_denies} });
-    return 0 if $filter->_check('_denies', 'attributes', $tagname, 'all');
-    return 1 unless $filter->{_allows} && %{ $filter->{_allows} };
-    return 1 if $filter->_check('_allows', 'tags', $tagname);
+    my ($self, $tagname) = @_;
+    return 0 unless $tagname && $self->has_rules;
+    return 0 if $self->_check('_denies', 'attributes', $tagname, 'all');
+    return 1 unless $self->has_allow_rules;
+    return 1 if $self->_check('_allows', 'tags', $tagname);
     return 0;
+}
+
+sub attribute_ok {
+    my ($self, $tagname, $attribute, $value) = @_;
+    my $ok = $self->_attribute_ok( $tagname, $attribute, $value );
+    $self->log_denied({ tag => $tagname, attribute => $attribute, value => $value, reason => 'attribute' }) unless $ok;
+    return $ok;
 }
 
 sub _attribute_ok {
-    my ($filter, $tagname, $attribute, $value) = @_;    
-
-    return 0 if $filter->_check('_denies','values', $tagname, $attribute, 'any',);
-    return 0 if $filter->_check('_denies','values', $tagname, $attribute, $value,);
-    return 0 if $filter->_check('_denies','attributes', $tagname, 'any',);
-
-    return 1 unless $filter->{_allows} && %{ $filter->{_allows} };
-    return 1 if $filter->_check('_allows','values', 'any', $attribute, 'any',);
-    return 1 if $filter->_check('_allows','values', 'any', $attribute, $value,);
-    return 1 if $filter->_check('_allows','attributes', $tagname, 'any',);
-    return 1 if $filter->_check('_allows','values', $tagname, $attribute, 'any',);
-    return 1 if $filter->_check('_allows','values', $tagname, $attribute, $value,);
+    my ($self, $tagname, $attribute, $value) = @_;
+    return 0 unless $tagname && $attribute && $self->has_rules;
+    return 0 if $self->_check('_denies','attributes', $tagname, 'any');
+    return 0 if $self->_check('_denies','values', $tagname, 'all',);
+    return 0 if $self->_check('_denies','values', $tagname, $attribute, 'any');
+    return 0 if $self->_check('_denies','values', $tagname, $attribute, $value);
+    return 1 unless $self->has_allow_rules;
+    return 1 if $self->_check('_allows','attributes', $tagname, 'any');
+    return 1 if $self->_check('_allows','values', 'any', $attribute, 'any');
+    return 1 if $self->_check('_allows','values', 'any', $attribute, $value);
+    return 1 if $self->_check('_allows','values', $tagname, $attribute, 'any');
+    return 1 if $self->_check('_allows','values', $tagname, $attribute, $value);
     return 0;
 }
 
+sub url_ok {
+    my ($self, $tagname, $attribute, $value) = @_;    
+    my $ok = $self->_url_ok( $attribute, $value );
+    $self->log_denied({ tag => $tagname, attribute => $attribute, value => $value, reason => 'url' }) unless $ok;
+    return $ok;
+}
+
+sub _url_ok {
+    my ($self, $attribute, $value) = @_;    
+    return 1 unless $self->{_settings}->{xss};
+	return 1 unless $self->_is_risky($attribute);
+	return 1 if $self->xss_allow_local_links && $value =~ /^\//s || $value =~ /^\.\.\//s || $value !~ /:/s;
+    return 1 if grep { $value =~ /^$_:/s } $self->xss_permitted_protocols;
+    return 0;
+}
+
+# _xss_clean_attribute(): defends against very basic XSS attacks by entifying quote marks and <>
+
+sub _xss_clean_attribute {
+    my ($self, $text, $attribute) = @_;
+    return $text unless $self->{_settings}->{xss};
+	$text =~ s/"/&quot;/igs;
+	$text =~ s/'/&rsquot;/igs;
+    $text =~ s/>/&gt;/gs;
+    $text =~ s/</&lt;/gs;
+    return $self->_obfuscate_mailto($text) if $attribute eq 'href';
+    return $text;
+}
+
+sub _is_risky {
+    my ($self, $attribute) = @_;
+    my %risky = map { $_ => 1 } $self->xss_risky_attributes;
+    return $risky{$attribute};
+}
+
+# uri_escape is imported from URI::Escape
+
+sub _obfuscate_mailto {
+	my ($self, $address) = @_;
+	return $address unless $self->{_settings}->{mailto};
+	return $address unless $address =~ /^mailto:/;
+	return join '', map { uri_escape($_, "\0-\377") } split //, $address;
+}
+
 # _check(): a private function to test for a value buried deep in a HoHoHo 
-# without cluttering the place up with autovivifications.
+# without cluttering the place up with autovivification.
 
 sub _check {
-    my $filter = shift;
+    my $self = shift;
     my $field = shift;
     my @russian_dolls = @_;
     unless (@russian_dolls) {
-        $filter->_log_error("[warning] _check: no keys supplied");
+        $self->_log_error("[warning] _check: no keys supplied");
         return 0;
     }
-    my $deepref = $filter->{$field};
+    my $deepref = $self->{$field};
     for (@russian_dolls) {
         unless (ref $deepref eq 'HASH') {
-            $filter->_log_error("[error] _check: deepref not a hashref");
+            $self->_log_error("[error] _check: deepref not a hashref");
             return 0;
         }
         return 0 unless $deepref->{$_};
@@ -520,17 +628,29 @@ sub _check {
 
 =over 4
 
-=item $filter->allow_tags($hashref)
+=item allow_tags($hashref)
 
 Takes a hashref of permissions and adds them to what we already have, replacing at the tag level where rules are already defined. In other words, you can add a tag to the existing set, but to add an attribute to an existing tag you have to specify the whole set of attribute permissions.  
 
 If no rules are sent (eg an empty hashref, or nothing at all, or a non-hashref) this clears the permission rule set.
 
-=item $filter->deny_tags($hashref)
+=item deny_tags($hashref)
 
 likewise but sets up (or clears) denial rules.
 
-=item $filter->clear_rules()
+=item has_rules()
+
+Returns true only if either allow or deny rules have been defined.
+
+=item has_allow_rules()
+
+Returns true if allow rules have been defined.
+
+=item has_deny_rules()
+
+Returns true if denial rules have been defined.
+
+=item clear_rules()
 
 Clears the entire rule set ready for the supply of a new set. A filter with no rules will clear everything, by the way.
 
@@ -539,56 +659,74 @@ Clears the entire rule set ready for the supply of a new set. A filter with no r
 =cut
 
 sub allow_tags {
-    my ($filter, $tagset) = @_;
+    my ($self, $tagset) = @_;
     if ($tagset && ref $tagset eq 'HASH' && %$tagset) {
-        $filter->_configurise('_allows', $tagset);
+        $self->_configurise('_allows', $tagset);
     } else {
-        $filter->{_allows} = {};
+        $self->{_allows} = {};
     }
     return 1;
 }
 
 sub deny_tags {
-    my ($filter, $tagset) = @_;
+    my ($self, $tagset) = @_;
     if ($tagset && ref $tagset eq 'HASH' && %$tagset) {
-        $filter->_configurise('_denies', $tagset);
+        $self->_configurise('_denies', $tagset);
     } else {
-        $filter->{_denies} = {};
+        $self->{_denies} = {};
     }
     return 1;
 }
 
+sub has_rules {
+    my $self = shift;
+    return 1 if $self->has_allow_rules || $self->has_deny_rules;
+    return 0;
+}
+
+sub has_allow_rules {
+    my $self = shift;
+    return 1 if $self->{_allows} && %{ $self->{_allows} };
+    return 0;
+}
+
+sub has_deny_rules {
+    my $self = shift;
+    return 1 if $self->{_denies} && %{ $self->{_denies} };
+    return 0;
+}
+
 sub clear_rules {
-    my $filter = shift;
-    $filter->{_allows} = {};
-    $filter->{_denies} = {};
+    my $self = shift;
+    $self->{_allows} = {};
+    $self->{_denies} = {};
 }
 
 # _configurise(): a private function that translates input rules into
 # the bushy HoHoHo's we're using for lookup.
 
 sub _configurise {
-    my ($filter, $field, $tagset) = @_;
+    my ($self, $field, $tagset) = @_;
 
      unless (ref $tagset eq 'HASH') {
-         $filter->_log_error("[error] _configurise: supplied rules not a hashref");
+         $self->_log_error("[error] _configurise: supplied rules not a hashref");
          return ();
      }
-     $filter->_log_error("[warning] _configurise: supplied rule set empty") unless keys %$tagset;
+     $self->_log_error("[warning] _configurise: supplied rule set empty") unless keys %$tagset;
 
     TAG: foreach my $tag (keys %$tagset) {
-        $filter->{$field}->{tags}->{$tag} = 1;
+        $self->{$field}->{tags}->{$tag} = 1;
         
         ATT: foreach my $att (keys %{ $tagset->{$tag} }) {
 			if ($att eq 'none') {
-				$filter->{$field}->{attributes}->{$tag} = {};
+				$self->{$field}->{attributes}->{$tag} = {};
 				next TAG;
 			}
-            $filter->{$field}->{attributes}->{$tag}->{$att} = 1;
-            $filter->{$field}->{values}->{$tag}->{$att}->{any} = 1
+            $self->{$field}->{attributes}->{$tag}->{$att} = 1;
+            $self->{$field}->{values}->{$tag}->{$att}->{any} = 1
             	unless defined( $tagset->{$tag}->{$att} ) && @{ $tagset->{$tag}->{$att} };
             foreach my $val (@{ $tagset->{$tag}->{$att} }) {
-                $filter->{$field}->{values}->{$tag}->{$att}->{$val} = 1;
+                $self->{$field}->{values}->{$tag}->{$att}->{$val} = 1;
             }
         }
     }
@@ -596,11 +734,11 @@ sub _configurise {
 
 =over 4
 
-=item $filter->allows()
+=item allows()
 
 Returns the full set of permissions as a HoHoho. Can't be set this way: ust a utility function in case you want to either display the rule set, or send it back to allow_tags in a modified form.
 
-=item $filter->denies()
+=item denies()
 
 Likewise for denial rules.
 
@@ -609,18 +747,63 @@ Likewise for denial rules.
 =cut
 
 sub allows {
-    my $filter = shift;
-    return $filter->{_allows};
+    my $self = shift;
+    return $self->{_allows};
 }
 
 sub denies {
-    my $filter = shift;
-    return $filter->{_denies};
+    my $self = shift;
+    return $self->{_denies};
 }
 
 =over 4
 
-=item $filter->error()
+=item xss_risky_attributes( @list_of_attributes );
+
+Sets and returns a list of attributes that are considered to be urls, and should be checked for well-formedness. 
+
+The default list is href, src, lowsrc, cite and background: any supplied values will be used to replace (not extend) this list.
+
+=item xss_permitted_protocols( @list_of_prefixes );
+
+Sets and returns a list of protocols that are acceptable in attributes that are considered to be urls. 
+
+The default list is http, https, lowsrc and mailto. Any supplied values will be used to replace (not extend) this list. Don't include the colon.
+
+=item xss_allow_local_links( $boolean );
+
+If this method returns a true value, then addresses that begin '/' or '../' will be accepted in url fields. 
+
+You can set this value by calling the method with a parameter, as usual. The default is true.
+
+=back
+
+=cut
+
+sub xss_risky_attributes { 
+    my $self = shift;
+    return @{ $self->{_xss_att} } = @_ if @_;
+    return @{ $self->{_xss_att} } if $self->{_xss_att};
+    return @{ $self->{_xss_att} } = qw(src href cite lowsrc background) ;
+}
+
+sub xss_permitted_protocols { 
+    my $self = shift;
+    return @{ $self->{_xss_stems} } = @_ if @_;
+    return @{ $self->{_xss_stems} } if $self->{_xss_stems};
+    return @{ $self->{_xss_stems} } = qw(http https mailto ftp) ;
+}
+
+sub xss_allow_local_links { 
+    my $self = shift;
+    return $self->{_xss_local} = $_[0] if @_;
+    return $self->{_xss_local} if $self->{_xss_local};
+    return $self->{_xss_local} = 1;
+}
+
+=over 4
+
+=item error()
 
 Returns an error report of currently dubious usefulness.
 
@@ -629,16 +812,16 @@ Returns an error report of currently dubious usefulness.
 =cut
 
 sub error {
-    my $filter = shift;
-    return "HTML::TagFilter errors:\n" . join("\n", @{$filter->{_error}}) if $filter->{_error};
+    my $self = shift;
+    return "HTML::TagFilter errors:\n" . join("\n", @{$self->{_error}}) if $self->{_error};
 	return '';
 }
 
 # _log_error: append a message to the error log
 
 sub _log_error {
-    my $filter = shift;
-    push @{ $filter ->{_error} } , @_;
+    my $self = shift;
+    push @{ $self ->{_error} } , @_;
 }
 
 # handler() exists here only to admonish people who try to use this module as they would
