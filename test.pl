@@ -1,97 +1,53 @@
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
+use strict;
+use lib qw( ../lib );
+use Test::More;
 
-######################### We start with some black magic to print on failure.
+BEGIN {
+    plan (tests => 20);
+    use_ok('HTML::TagFilter');
+}
 
-# Change 1..1 below to 1..last_test_to_print .
-# (It may become useful if the test is moved to ./t subdirectory.)
-
-BEGIN { $| = 1; print "1..1\n"; }
-END {print "not ok 1: load failed\n" unless $loaded;}
-use HTML::TagFilter;
-$loaded = 1;
-$version = $HTML::TagFilter::VERSION;
-print "ok 1: module loaded. Version is $version\n";
-
-######################### End of black magic.
-
-# Insert your test code below (better if it prints "ok 13"
-# (correspondingly "not ok 13") depending on the success of chunk 13
-# of the test code):
-
-my $tf = new HTML::TagFilter(
+my $tf = HTML::TagFilter->new(
 	log_rejects => 1,
 	strip_comments => 0,
 	echo => 0,
 );
-my $result = $tf->filter("<p>testing</p>");
-print ($result eq "<p>testing</p>" ? "ok 2: default allow\n" : "not ok 2: '$result'\n");
-
-$result = $tf->filter("<blink>testing</blink>");
-print ($result eq "testing" ? "ok 3: default forbid tag\n" : "not ok 3: '$result'\n");
-
-$result = $tf->filter(qq|<p nonsense="rubbish">testing</p>|);
-print ($result eq "<p>testing</p>" ? "ok 4: default forbid attribute\n" : "not ok 4: '$result'\n");
-
-$result = $tf->filter(qq|<p align="rubbish">testing</p>|);
-print ($result eq "<p>testing</p>" ? "ok 5: default forbid value\n" : "not ok 5: '$result'\n");
-
-$tf->allow_tags();
-$result = $tf->filter("<p>testing</p>");
-print ($result eq "testing" ? "ok 6: change allow rule set\n" : "not ok 6: '$result'\n");
-
-$result = $tf->report;
-print ($result =~ /&lt;p&gt;/ ? "ok 7: deletion report\n" : "not ok 7: '$result'\n");
-
-my $tf2 = new HTML::TagFilter(
+my $tf2 = HTML::TagFilter->new(
 	log_rejects => 0,
 	strip_comments => 1,
 	rubbish => 0,
 );
-$result = $tf2->error;
-print ($result =~ /rubbish/ ? "ok 8: error report\n" : "not ok 8: '$result'\n");
-
-$result = $tf->filter("<p>testing</p><!--hey-->");
-print ($result eq "testing&lt;!--hey--&gt;" ? "ok 9: comment permitted, < > escaped\n" : "not ok 9: $result\n");
-
-$result = $tf2->filter("<p><blink>testing</blink></p><!--hey-->");
-print ($result eq "<p>testing</p>" ? "ok 10: comment deleted\n" : "not ok 10: '$result'\n");
-
-$result = $tf2->report;
-print ($result ? "not ok 11: '$result'\n" : "ok 11: report properly empty\n");
-
 my $tf3 = HTML::TagFilter->new( 
-	allow => { p => { class=> [qw(lurid sombre plain)] } },
+	allow => { 
+	    p => { class=> [qw(lurid sombre plain)] },
+    },
 );
-$result = $tf3->filter(qq|<p class="lurid"><b>testing</b></p>|);
-print ($result eq qq|<p class="lurid">testing</p>| ? "ok 12: permitted attribute\n" : "not ok 12: '$result'\n");
-
 my $tf4 = HTML::TagFilter->new( 
-	deny => { p => { any => [] } },
+	deny => { 
+	    p => { any => [] },
+	    a => { all => [] },
+	},
 );
-$result = $tf4->filter(qq|<p class="lurid"><b>testing</b></p>|);
-print ($result eq qq|<p><b>testing</b></p>| ? "ok 13: forbidden attribute\n" : "not ok 13: '$result'\n");
 
-$result = $tf2->filter(qq|<img src="1" height="2" width="3" alt="4" align="5">|);
-print ($result eq qq|<img src="1" height="2" width="3" alt="4" align="5">| ? "ok 14: attribute order preserved\n" : "not ok 14: '$result'\n");
-
-$result = $tf2->filter(qq|<h1 none="javascript:alert(1)">oops</h1>|);
-print ($result eq qq|<h1>oops</h1>| ? "ok 15: none is magic\n" : "not ok 15: '$result'\n");
-
-$result = $tf2->filter(qq|<a name="&quot;></a><script>alert(1)</script><i foo=&quot;">hello</i>|);
-print ($result eq qq|<a name="&quot;></a><script>alert(1)</script><i foo=&quot;">hello</i>| ? "ok 16: quote unquote loophole closed\n" : "not ok 16: '$result'\n");
-
-$result = $tf2->filter(qq|<img src="javascript:alert(1)">|);
-print ($result eq qq|<img src="">| ? "ok 17: malicious src attribute stripped out\n" : "not ok 17: '$result'\n");
-
-$result = $tf2->filter(qq|<a href="javascript:alert(1)">hello</a>|);
-print ($result eq qq|<a href="">hello</a>| ? "ok 18: malicious href attribute stripped out\n" : "not ok 18: '$result'\n");
-
-
-
-
-
-
-
-
-
+ok( $tf, 'tag filter object configured and constructed' );
+is( $tf->filter("<p>testing</p>"), "<p>testing</p>", "default tag allowance" );
+is( $tf->filter("<blink>testing</blink>"), "testing", "default tag denial");
+is( $tf->filter(qq|<p nonsense="rubbish">testing</p>|), "<p>testing</p>", "default attribute denial");
+is( $tf->filter(qq|<p align="rubbish">testing</p>|), "<p>testing</p>", "default value denial");
+$tf->clear_rules();
+is( $tf->filter(qq|<p>testing</p>|), "testing", "rules cleared: everything stripped");
+my $report = $tf->report;
+ok( $report =~ /&lt;p&gt;/, "removal logging");
+my $error = $tf2->error;
+ok( $error =~ /rubbish/, "error report" );
+is( $tf->filter("<p>testing</p><!--hey-->"), "testing&lt;!--hey--&gt;", "comment permitted, < > escaped");
+is( $tf2->filter("<p>testing</p><!--hey-->"), "<p>testing</p>", "comment deleted" );
+is( $tf2->report, undef, "report properly empty");
+is( $tf3->filter(qq|<p class="lurid"><p class="rubbish">testing</p></p>|), qq|<p class="lurid"><p>testing</p></p>|, "manually permitted attribute remains: others removed.");
+is( $tf4->filter(qq|<a class="lurid"><b>testing</b></a>|), qq|<b>testing</b>|, "manually forbidden tag removed: others permitted" );
+is( $tf4->filter(qq|<p class="lurid"><b>testing</b></p>|), qq|<p><b>testing</b></p>|, "manually forbidden attribute removed: others permitted" );
+is( $tf2->filter(qq|<img src="1" height="2" width="3" alt="4" align="5">|), qq|<img src="1" height="2" width="3" alt="4" align="5">|, "attribute order preserved" );
+is( $tf2->filter(qq|<h1 none="javascript:alert(1)">oops</h1>|), qq|<h1>oops</h1>|, "none is magic" );
+is( $tf2->filter(qq|<a name="&quot;></a><script>alert(1)</script><i foo=&quot;">hello</i>|), qq|<a name="&quot;></a><script>alert(1)</script><i foo=&quot;">hello</i>|, "quote unquote loophole closed");
+is( $tf2->filter(qq|<img src="javascript:alert(1)">|), qq|<img src="">|, "malicious src attribute stripped out");
+is( $tf2->filter(qq|<a href="javascript:alert(1)">hello</a>|), qq|<a href="">hello</a>|, "malicious href attribute stripped out");

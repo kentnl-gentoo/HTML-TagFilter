@@ -1,59 +1,66 @@
 Revision history for Perl extension TagFilter.
 
 0.01  Fri Sep 14 01:19:43 2001
-    Only permission filter: no denial rules.
-    Worked quite well.
+    * Only permission filter: no denial rules.
+    * Worked quite well.
 0.02  Mon Sep 17 2001
-    Added denial rules. 
-    Didn't work very well.
+    * Added denial rules. 
+    * Didn't work very well.
 0.03  Tues Sep 18 2001
-    Changed from trying to work out meaning of empty lists to using 
-    reserved words 'any', 'all', 'none'. 
-    Denial rules work sporadically.
+    * Changed from trying to work out meaning of empty lists to using 
+      reserved words 'any', 'all', 'none'. 
+    * Denial rules work sporadically.
 0.04  Wed Sep 19 2001
-    Added _check() method to allow testing of values deep in HoHoHo 
-    without autovivification and subsequent mess. 
-    Denial rules become less ambitious, more useful. 
-    Pod grows more verbose.
+    * Added _check() method to allow testing of values deep in HoHoHo 
+      without autovivification and subsequent mess. 
+    * Denial rules become less ambitious, more useful. 
+    * Pod grows more verbose.
 0.05  Wed Sep 20 2001
-    Added tag/attribute removal logging, and 'log' option, in order 
-    that users may be chastised in detail for putting in naughty html.
-0.06  Sun Oct 21 2001
-    Simplified interface with addition of ->filter() and ->report() methods
-    Abandoned attempts to preserve tag order: put back on to do list :(
-    Made pod even more windy.
-    Added 'echo' option to direct output to STDOUT as a proper child 
-    of HTML::Parser should, at Gisle Aas' suggestion. makes it more useful 
-    to networking applications, i gather.
+    * Added tag/attribute removal logging, and 'log' option, in order 
+      that users may be chastised in detail for putting in naughty html.
+0.06 Sun Oct 21 2001
+    * Simplified interface with addition of ->filter() and ->report() methods
+    * Abandoned attempts to preserve tag order: put back on to do list :(
+    * Made pod even more windy.
+    * Added 'echo' option to direct output to STDOUT as a proper child 
+      of HTML::Parser should, at Gisle Aas' suggestion. makes it more 
+      useful to networking applications, apparently.
 0.07  Thu Oct 25 2001
-    no more warnings
-    error() reporting. can now write 
-    $foo = $tf->filter($bar) || die $tf->error 
-    and get sensible output. main tests in place. 
+    * no more warnings
+    * error() reporting. can now write 
+      $foo = $tf->filter($bar) || die $tf->error 
+      and get sensible output. main tests in place. 
  0.071  Mon Jul 21 2003
     * changed default handler to escape < and > in order
-    to prevent a common cross-site attack, thanks to bug report 
-    by nick cleaton
+      to prevent a common cross-site attack, thanks to bug report 
+      by nick cleaton
  0.072  Tues Jul 22 2003
     * attribute order now preserved (requested by GA long ago)
     * parser instructed not to de-entify: closes a loophole that
-    could allow an attacker to hide forbidden tags (eg script)
-    within attribute values, to be revealed when Parser turned &quot;
-    into "
+      could allow an attacker to hide forbidden tags (eg script)
+      within attribute values, to be revealed when Parser turned &quot;
+      into "
     * all attributes s/javascript:// just in case.
     * bug corrected where 'none' was not magic in rule set, but just 
-    treated as another attribute (doh)
+      treated as another attribute (doh)
  0.073  Tues Jul 22 2003
     * cross-site scripting protection improved: parser allowed to entify
-    again (that was silly), but values for certain vulnerable attributes
-    are subjected to extra tests to ensure urlness not scriptness.
+      again (that was silly), but values for certain vulnerable attributes
+      are subjected to extra tests to ensure urlness not scriptness.
     * tests added for the xss protection and other recent fixes
- 0.074  Tues Jul 23 2003
+ 0.074 Tues Jul 23 2003
     * tidied up a bit
     * extended the default list of xss vulnerable tags to: src, lowsrc, 
-    href, background, cite. Also made it user-modifiable in subclass.
+      href, background, cite. Also made it user-modifiable in subclass.
     * a few remaining variables turned into subs to facilitate subclassing
- 0.075  Wed Oct 8 2003
+ 0.075 Wed Oct 8 2003
     * noticed that cross-site safeguards were preventing mailto: hrefs from 
-    getting through. Corrected.
-    
+      getting through. Corrected.
+ 0.08 Wed Jun 2 2004
+    * By popular demand, a filter with only denial rules lets through everything
+      that is not explicitly denied. Makes it easier to strip out a few tags and
+      leave the rest.
+    * bugfix: supplying an empty set of rules to allow_tags or deny_tags now
+      clears that part of the rule set, as the documentation promises.
+    * clear_rules method added to simplify the interface.
+    * Tests now use Test::More like proper grown-ups.

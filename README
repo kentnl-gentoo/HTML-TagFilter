@@ -1,4 +1,4 @@
-HTML::TagFilter 0.072
+HTML::TagFilter 0.08
 
 DESCRIPTION
 
@@ -15,7 +15,9 @@ my $tf = new HTML::TagFilter;
 my $clean_html = $tf->filter($dirty_html);
 
 But you can also specify your own rule sets, tweak the behaviour of the
-filter and generally do what you like. There's lots of documentation in pod.
+filter and generally do what you like. There's lots of documentation in pod, 
+and don't be put off by the low version number: there have been twenty-odd 
+public releases and the interface is now mature, if not exactly friendly.
 
 INSTALLATION
 
@@ -24,10 +26,10 @@ make
 make test
 make install
 
-Please use https://rt.cpan.org/ to report bugs & omissions, describe cross-site attacks
-that get through, or just to suggest improvements.
+Please use https://rt.cpan.org/ to report bugs & omissions, describe cross-site 
+attacks that get through, or just to suggest improvements.
 
-Copyright 2001-3 William Ross (wross@cpan.org)
+Copyright 2001-4 William Ross (wross@cpan.org)
 
 This library is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.

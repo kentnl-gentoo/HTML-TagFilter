@@ -1,6 +1,7 @@
 Changes
-MANIFEST
 Makefile.PL
+MANIFEST
 README
 TagFilter.pm
 test.pl
+META.yml                                Module meta-data (added by MakeMaker)

@@ -4,7 +4,7 @@ use strict;
 use base qw(HTML::Parser);
 use vars qw($VERSION);
 
-$VERSION = '0.075';  # $Date: 2003/10/08 $
+$VERSION = '0.08';  # $Date: 2003/10/08 $
 
 =head1 NAME
 
@@ -70,23 +70,23 @@ use the allow_tags and deny_tags methods to pass in one or more tag settings. eg
 
     $filter->allow_tags({ p => { class=> ['lurid','sombre','plain']} });
 
-will mean that all attributes other than class="lurid|sombre|plain" will be removed from <p> tags. See below for more about specifying rules.
+will mean that all attributes other than class="lurid|sombre|plain" will be removed from <p> tags, but the other default rules will remain unchanged. See below for more about specifying rules.
 
 =head2 supply your own configuration
 
 To override the defaults completely, supply the constructor with some rules:
 
-    my $filter = HTML::TagFilter->new( allow=>{ p => { class=> ['lurid','sombre','plain']} });
+    my $filter = HTML::TagFilter->new( 
+        allow=>{ p => { class=> ['lurid','sombre','plain']} }
+    );
 
-Only the rules you supply in this form will be applied. You can achieve the same thing after construction by first clearing the rule set:
+In this case only the rules you supply will be applied: the defaults are ignored. You can achieve the same thing after construction by first clearing the rule set:
 
     my $filter = HTML::TagFilter->new();
-    $filter->allow_tags();
+    $filter->clear_rules();
     $filter->allow_tags({ p => { align=> ['left','right','center']} });
 
 Future versions are intended to offer a more sophisticated rule system, allowing you to specify combinations of attributes, ranges for values and generally match names in a more fuzzy way. 
-
-I'm also considering adding a set of standard filters for, eg, image or javascript removal. I'd be glad to hear suggestions.
 
 The simple hash interface will continue to work for the foreseeable future, though.
 
@@ -286,8 +286,8 @@ sub new {
     $filter->{_log} = ();
     $filter->{_error} = ();
 
-    $config->{allow} ||= allowed_by_default();
-    $config->{deny} ||= denied_by_default();
+    $config->{allow} = allowed_by_default() unless $config->{allow} || $config->{deny};
+    $config->{deny} = denied_by_default() unless $config->{allow} || $config->{deny};
 
     $filter->allow_tags(delete $config->{allow});
     $filter->deny_tags(delete $config->{deny});
@@ -472,8 +472,9 @@ sub _log_denied {
 
 sub _tag_ok {
     my ($filter, $tagname) = @_;
-    return 0 unless $filter->{_allows} || $filter->{_denies};
+    return 0 unless ($filter->{_allows} && %{ $filter->{_allows} }) || ($filter->{_denies} && %{ $filter->{_denies} });
     return 0 if $filter->_check('_denies', 'attributes', $tagname, 'all');
+    return 1 unless $filter->{_allows} && %{ $filter->{_allows} };
     return 1 if $filter->_check('_allows', 'tags', $tagname);
     return 0;
 }
@@ -485,9 +486,9 @@ sub _attribute_ok {
     return 0 if $filter->_check('_denies','values', $tagname, $attribute, $value,);
     return 0 if $filter->_check('_denies','attributes', $tagname, 'any',);
 
+    return 1 unless $filter->{_allows} && %{ $filter->{_allows} };
     return 1 if $filter->_check('_allows','values', 'any', $attribute, 'any',);
     return 1 if $filter->_check('_allows','values', 'any', $attribute, $value,);
-
     return 1 if $filter->_check('_allows','attributes', $tagname, 'any',);
     return 1 if $filter->_check('_allows','values', $tagname, $attribute, 'any',);
     return 1 if $filter->_check('_allows','values', $tagname, $attribute, $value,);
@@ -521,11 +522,17 @@ sub _check {
 
 =item $filter->allow_tags($hashref)
 
-Takes a hashref of permissions and adds them to what we already have, replacing at the tag level where rules are already defined. In other words, you can add a tag to the existing set, but to add an attribute to an existing tag you have to specify the whole set of attribute permissions.  If no rules are sent, this clears the permission rule set.
+Takes a hashref of permissions and adds them to what we already have, replacing at the tag level where rules are already defined. In other words, you can add a tag to the existing set, but to add an attribute to an existing tag you have to specify the whole set of attribute permissions.  
+
+If no rules are sent (eg an empty hashref, or nothing at all, or a non-hashref) this clears the permission rule set.
 
 =item $filter->deny_tags($hashref)
 
 likewise but sets up (or clears) denial rules.
+
+=item $filter->clear_rules()
+
+Clears the entire rule set ready for the supply of a new set. A filter with no rules will clear everything, by the way.
 
 =back
 
@@ -533,8 +540,8 @@ likewise but sets up (or clears) denial rules.
 
 sub allow_tags {
     my ($filter, $tagset) = @_;
-    if ($tagset) {
-        $filter->_configurise('_allows',$tagset);
+    if ($tagset && ref $tagset eq 'HASH' && %$tagset) {
+        $filter->_configurise('_allows', $tagset);
     } else {
         $filter->{_allows} = {};
     }
@@ -543,12 +550,18 @@ sub allow_tags {
 
 sub deny_tags {
     my ($filter, $tagset) = @_;
-   if ($tagset) {
-        $filter->_configurise('_denies',$tagset);
+    if ($tagset && ref $tagset eq 'HASH' && %$tagset) {
+        $filter->_configurise('_denies', $tagset);
     } else {
         $filter->{_denies} = {};
     }
     return 1;
+}
+
+sub clear_rules {
+    my $filter = shift;
+    $filter->{_allows} = {};
+    $filter->{_denies} = {};
 }
 
 # _configurise(): a private function that translates input rules into
