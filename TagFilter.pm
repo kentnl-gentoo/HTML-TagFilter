@@ -4,7 +4,7 @@ use warnings;
 use base qw(HTML::Parser);
 use vars qw($VERSION);
 
-$VERSION = '0.07';  # $Date: 2001/10/25 $
+$VERSION = '0.071';  # $Date: 2003/07/21 $
 
 =head1 NAME
 
@@ -24,6 +24,7 @@ HTML::TagFilter - An HTML::Parser-based selective tag remover
         log_rejects => 1, 
         strip_comments => 1, 
         echo => 1,
+        no_escape => 1,
     );
     
     $tf->parse($some_html);
@@ -53,7 +54,7 @@ will do. However, it can also be used for display processes (eg text-only transl
 
 Will strip out all images, for example, but leave everything else untouched.
 
-nb (faq #1) the filter only removes the tags themselves: it doesn't affect the text between them.
+nb (faq #1) the filter only removes the tags themselves: all it does to text which is not part of a tag is to escape the <s and >s, to guard against false negatives and some common cross-site attacks.
 
 =head1 CONFIGURATION: RULES
 
@@ -91,12 +92,13 @@ The simple hash interface will continue to work for the foreseeable future, thou
 
 =head1 CONFIGURATION: BEHAVIOURS
 
-There are currently three switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
+There are currently four switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
 
     my $tf = HTML::TagFilter->new(
         log_rejects => 1,
         strip_comments => 1,
         echo => 1,
+        no_escape => 1,
     );
     
 =over 4
@@ -112,6 +114,10 @@ Set echo to 1, or anything true, and the output of the filter will be sent strai
 =item strip_comments
 
 Set strip_comments to 1 and comments will be stripped. If you don't, they won't.
+
+=item no_escape
+
+Set no_escape to 1 to prevent the filter from turning < and > characters in the main text into html entities.
 
 =back
 
@@ -265,7 +271,7 @@ sub new {
 
     $filter->SUPER::handler(start => "_filter_start", 'self, tagname, attr');
     $filter->SUPER::handler(end =>  "_filter_end", 'self, tagname');
-    $filter->SUPER::handler(default => "_add_to_output", "self, text");
+    $filter->SUPER::handler(default => "_clean_text", "self, text") unless delete $config->{no_escape};
     $filter->SUPER::handler(comment => "") if delete $config->{strip_comments};
 
     $filter->{_allows} = {};
@@ -392,6 +398,15 @@ sub _filter_start {
 sub _filter_end {
     my ($filter, $tagname) = @_;
     $filter->_add_to_output("</$tagname>") if ($filter->_tag_ok(lc($tagname)));
+}
+
+# _clean_text(): the default action carried out on non-tag bits of text. defends against basic XSS by entifying < and >.
+
+sub _clean_text {
+    my ($filter, $text) = @_;
+    $text =~ s/\>/&gt;/gs;
+    $text =~ s/\</&lt;/gs;
+    $filter->_add_to_output($text);
 }
 
 sub _add_to_output {

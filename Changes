@@ -30,4 +30,11 @@ Revision history for Perl extension TagFilter.
     error() reporting. can now write 
     $foo = $tf->filter($bar) || die $tf->error 
     and get sensible output. main tests in place. 
+ 0.071  Thu Oct 25 2001
+    changed default handler to escape < and > in order
+    to prevent a common cross-site attack, thanks to 
+    bug report posted in rt.cpan.org, of which author 
+    was previously blissfully unaware.
     
+    
+   
