@@ -24,23 +24,23 @@ my $tf = new HTML::TagFilter(
 	echo => 0,
 );
 my $result = $tf->filter("<p>testing</p>");
-print ($result eq "<p>testing</p>" ? "ok 2: default allow\n" : "not ok 2\n");
+print ($result eq "<p>testing</p>" ? "ok 2: default allow\n" : "not ok 2: '$result'\n");
 
 $result = $tf->filter("<blink>testing</blink>");
-print ($result eq "testing" ? "ok 3: default forbid tag\n" : "not ok 3\n");
+print ($result eq "testing" ? "ok 3: default forbid tag\n" : "not ok 3: '$result'\n");
 
 $result = $tf->filter(qq|<p nonsense="rubbish">testing</p>|);
-print ($result eq "<p>testing</p>" ? "ok 4: default forbid attribute\n" : "not ok 4\n");
+print ($result eq "<p>testing</p>" ? "ok 4: default forbid attribute\n" : "not ok 4: '$result'\n");
 
 $result = $tf->filter(qq|<p align="rubbish">testing</p>|);
-print ($result eq "<p>testing</p>" ? "ok 5: default forbid value\n" : "not ok 5\n");
+print ($result eq "<p>testing</p>" ? "ok 5: default forbid value\n" : "not ok 5: '$result'\n");
 
 $tf->allow_tags();
 $result = $tf->filter("<p>testing</p>");
-print ($result eq "testing" ? "ok 6: change allow rule set\n" : "not ok 6\n");
+print ($result eq "testing" ? "ok 6: change allow rule set\n" : "not ok 6: '$result'\n");
 
 $result = $tf->report;
-print ($result =~ /&lt;p&gt;/ ? "ok 7: deletion report\n" : "not ok 7\n");
+print ($result =~ /&lt;p&gt;/ ? "ok 7: deletion report\n" : "not ok 7: '$result'\n");
 
 my $tf2 = new HTML::TagFilter(
 	log_rejects => 0,
@@ -48,28 +48,43 @@ my $tf2 = new HTML::TagFilter(
 	rubbish => 0,
 );
 $result = $tf2->error;
-print ($result =~ /rubbish/ ? "ok 8: error report\n" : "not ok 8\n");
+print ($result =~ /rubbish/ ? "ok 8: error report\n" : "not ok 8: '$result'\n");
 
 $result = $tf->filter("<p>testing</p><!--hey-->");
 print ($result eq "testing&lt;!--hey--&gt;" ? "ok 9: comment permitted, < > escaped\n" : "not ok 9: $result\n");
 
 $result = $tf2->filter("<p><blink>testing</blink></p><!--hey-->");
-print ($result eq "<p>testing</p>" ? "ok 10: comment deleted\n" : "not ok 10\n");
+print ($result eq "<p>testing</p>" ? "ok 10: comment deleted\n" : "not ok 10: '$result'\n");
 
 $result = $tf2->report;
-print ($result ? "not ok 11\n" : "ok 11: report empty\n");
+print ($result ? "not ok 11: '$result'\n" : "ok 11: report empty\n");
 
 my $tf3 = HTML::TagFilter->new( 
 	allow => { p => { class=> [qw(lurid sombre plain)] } },
 );
 $result = $tf3->filter(qq|<p class="lurid"><b>testing</b></p>|);
-print ($result eq qq|<p class="lurid">testing</p>| ? "ok 12: permitted attribute\n" : "not ok 12\n");
+print ($result eq qq|<p class="lurid">testing</p>| ? "ok 12: permitted attribute\n" : "not ok 12: '$result'\n");
 
 my $tf4 = HTML::TagFilter->new( 
 	deny => { p => { any => [] } },
 );
 $result = $tf4->filter(qq|<p class="lurid"><b>testing</b></p>|);
-print ($result eq qq|<p><b>testing</b></p>| ? "ok 13: forbidden attribute\n" : "not ok 13\n");
+print ($result eq qq|<p><b>testing</b></p>| ? "ok 13: forbidden attribute\n" : "not ok 13: '$result'\n");
+
+$result = $tf2->filter(qq|<img src="javascript:alert(1)">|);
+print ($result eq qq|<img src="alert(1)">| ? "ok 14: javascript: stripped\n" : "not ok 14: '$result'\n");
+
+$result = $tf2->filter(qq|<h1 none="javascript:alert(1)">oops</h1>|);
+print ($result eq qq|<h1>oops</h1>| ? "ok 15: none is magic\n" : "not ok 15: '$result'\n");
+
+$result = $tf2->filter(qq|<img src="1" height="2" width="3" alt="4" align="5">|);
+print ($result eq qq|<img src="1" height="2" width="3" alt="4" align="5">| ? "ok 16: attribute order preserved\n" : "not ok 16: '$result'\n");
+
+
+
+
+
+
 
 
 

@@ -4,7 +4,7 @@ use warnings;
 use base qw(HTML::Parser);
 use vars qw($VERSION);
 
-$VERSION = '0.071';  # $Date: 2003/07/21 $
+$VERSION = '0.072';  # $Date: 2003/07/22 $
 
 =head1 NAME
 
@@ -25,6 +25,7 @@ HTML::TagFilter - An HTML::Parser-based selective tag remover
         strip_comments => 1, 
         echo => 1,
         no_escape => 1,
+        keep_javascript => 1,
     );
     
     $tf->parse($some_html);
@@ -92,13 +93,14 @@ The simple hash interface will continue to work for the foreseeable future, thou
 
 =head1 CONFIGURATION: BEHAVIOURS
 
-There are currently four switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
+There are currently five switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
 
     my $tf = HTML::TagFilter->new(
         log_rejects => 1,
         strip_comments => 1,
         echo => 1,
         no_escape => 1,
+        keep_javascript => 1,
     );
     
 =over 4
@@ -118,6 +120,10 @@ Set strip_comments to 1 and comments will be stripped. If you don't, they won't.
 =item no_escape
 
 Set no_escape to 1 to prevent the filter from turning < and > characters in the main text into html entities.
+
+=item keep_javascript
+
+Unless you set keep_javascript to 1, the string 'javascript:' will be removed from every attribute value.
 
 =back
 
@@ -269,11 +275,12 @@ sub new {
     
     my $filter = $class->SUPER::new(api_version => 3);
 
-    $filter->SUPER::handler(start => "_filter_start", 'self, tagname, attr');
-    $filter->SUPER::handler(end =>  "_filter_end", 'self, tagname');
-    $filter->SUPER::handler(default => "_clean_text", "self, text") unless delete $config->{no_escape};
+    $filter->SUPER::handler(start => "filter_start", 'self, tagname, attr, attrseq');
+    $filter->SUPER::handler(end =>  "filter_end", 'self, tagname');
+    $filter->SUPER::handler(default => "clean_text", "self, text");
     $filter->SUPER::handler(comment => "") if delete $config->{strip_comments};
-
+	$filter->attr_encoded(1);
+	
     $filter->{_allows} = {};
     $filter->{_denies} = {};
     $filter->{_settings} = {};
@@ -288,6 +295,8 @@ sub new {
     
     $filter->{_settings}->{log} = 1 if delete $config->{log_rejects};
     $filter->{_settings}->{echo} = 1 if delete $config->{echo};
+    $filter->{_settings}->{entify} = 1 unless delete $config->{no_escape};
+    $filter->{_settings}->{remove_javascript} = 1 unless delete $config->{keep_javascript};
     
     $filter->_log_error("[warning] ignored config field: $_") for keys %$config;
     
@@ -376,16 +385,16 @@ sub report {
 # and then, if they pass, each of their attributes against the attribute_ok() function. Anything that
 # fails either test is removed, and the remainder if any passed to output.
 
-sub _filter_start {
-    my ($filter, $tagname, $attr) = @_;
+sub filter_start {
+    my ($filter, $tagname, $attr, $attrseq) = @_;
     if ($filter->_tag_ok(lc($tagname))) {
         for (keys %$attr) {
             unless ($filter->_attribute_ok(lc($tagname), lc($_), lc($$attr{$_}))) {
-                   $filter->_log_denied({ tag => $tagname, attribute => $_, value => $$attr{$_} }) if $filter->{_settings}->{log};
+                $filter->_log_denied({ tag => $tagname, attribute => $_, value => $$attr{$_} }) if $filter->{_settings}->{log};
                 delete $$attr{$_};
             }
         }
-        my $filtered_tag = "<$tagname" . join('',map(qq| $_="$$attr{$_}"|, keys %$attr)) . ">";
+        my $filtered_tag = "<$tagname" . join('', map { " $_=\"" . $filter->_xss_clean_attribute($attr->{$_}) . '"' } grep { exists $attr->{$_} } @$attrseq) . ">";
         $filter->_add_to_output($filtered_tag);
     } else {
         $filter->_log_denied({tag => $tagname}) if $filter->{_settings}->{log};
@@ -395,18 +404,32 @@ sub _filter_start {
 # _filter_end(): the designated handler for end tags: tests them against the _tag_ok() function
 # and passes them to output if they're acceptable.
 
-sub _filter_end {
+sub filter_end {
     my ($filter, $tagname) = @_;
     $filter->_add_to_output("</$tagname>") if ($filter->_tag_ok(lc($tagname)));
 }
 
-# _clean_text(): the default action carried out on non-tag bits of text. defends against basic XSS by entifying < and >.
-
-sub _clean_text {
+sub clean_text {
     my ($filter, $text) = @_;
+    $filter->_add_to_output($filter->_xss_clean_text($text));
+}
+
+# _xss_clean_text(): the default action carried out on non-tag bits of text. defends against basic XSS by entifying < and >.
+
+sub _xss_clean_text {
+    my ($filter, $text) = @_;
+    return $text unless $filter->{_settings}->{entify};
     $text =~ s/\>/&gt;/gs;
     $text =~ s/\</&lt;/gs;
-    $filter->_add_to_output($text);
+    return $text;
+}
+
+# _xss_clean_attribute(): the default action carried out on attribute values. defends against basic XSS by quoting "
+
+sub _xss_clean_attribute {
+    my ($filter, $text) = @_;
+	$text =~ s/javascript://igs if $filter->{_settings}->{remove_javascript};
+    return $text;
 }
 
 sub _add_to_output {
@@ -516,9 +539,14 @@ sub _configurise {
      }
      $filter->_log_error("[warning] _configurise: supplied rule set empty") unless keys %$tagset;
 
-    foreach my $tag (keys %$tagset) {
+    TAG: foreach my $tag (keys %$tagset) {
         $filter->{$field}->{tags}->{$tag} = 1;
-        foreach my $att (keys %{ $tagset->{$tag} }) {
+        
+        ATT: foreach my $att (keys %{ $tagset->{$tag} }) {
+			if ($att eq 'none') {
+				$filter->{$field}->{attributes}->{$tag} = {};
+				next TAG;
+			}
             $filter->{$field}->{attributes}->{$tag}->{$att} = 1;
             $filter->{$field}->{values}->{$tag}->{$att}->{any} = 1
             	unless defined( $tagset->{$tag}->{$att} ) && @{ $tagset->{$tag}->{$att} };
@@ -593,9 +621,7 @@ Simpler rule-definition interface
 
 Complex rules. The long term goal is that someone can supply a rule like "remove all images where height or width is missing" or "change all font tags where size="2" to <span class="small">.
 
-Which will be hard. For a start, HTML::Parser does not, as far as I know, see paired start and close tags, which would be required for conditional actions.
-
-An option to preserve tag order (for readability to humans. thanks to mr aas for the tip.)
+Which will be hard. For a start, HTML::Parser doesn't see paired start and close tags, which would be required for conditional actions.
 
 An option to speed up operations by working only at the tag level and using HTML::Parser's built-in screens.
 
@@ -611,11 +637,11 @@ L<HTML::Parser>
 
 =head1 AUTHOR
 
-William Ross, will@spanner.org
+William Ross, wross@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright 2001 William Ross
+Copyright 2001-3 William Ross
 
 This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 

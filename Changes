@@ -30,11 +30,18 @@ Revision history for Perl extension TagFilter.
     error() reporting. can now write 
     $foo = $tf->filter($bar) || die $tf->error 
     and get sensible output. main tests in place. 
- 0.071  Thu Oct 25 2001
-    changed default handler to escape < and > in order
-    to prevent a common cross-site attack, thanks to 
-    bug report posted in rt.cpan.org, of which author 
-    was previously blissfully unaware.
-    
+ 0.071  Mon Jul 21 2003
+    * changed default handler to escape < and > in order
+    to prevent a common cross-site attack, thanks to bug report 
+    by nick cleaton
+ 0.072  Tues Jul 22 2003
+    * attribute order now preserved (requested by GA long ago)
+    * parser instructed not to de-entify: closes a loophole that
+    could allow an attacker to hide forbidden tags (eg script)
+    within attribute values, to be revealed when Parser turned &quot;
+    into "
+    * all attributes s/javascript:// just in case.
+    * bug corrected where 'none' was not magic in rule set, but just 
+    treated as another attribute (doh)
     
    

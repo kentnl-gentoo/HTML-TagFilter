@@ -1,8 +1,8 @@
-HTML::TagFilter 0.07
+HTML::TagFilter 0.072
 
 DESCRIPTION
 
-HTML::TagFilter is a (tentatively named) subclass of HTML::Parser with a
+HTML::TagFilter is a subclass of HTML::Parser with a
 single purpose: it will remove unwanted html tags and attributes from a
 piece of text. It can act in a more or less fine-grained way - you can
 specify permitted tags, permitted attributes of each tag, and permitted
@@ -14,8 +14,8 @@ use HTML::TagFilter;
 my $tf = new HTML::TagFilter; 
 my $clean_html = $tf->filter($dirty_html);
 
-But you can specify your own rule sets, tweak the behaviour of the
-filter and generally do what you like. There's lots of documentation.
+But you can also specify your own rule sets, tweak the behaviour of the
+filter and generally do what you like. There's lots of documentation in pod.
 
 INSTALLATION
 
@@ -24,13 +24,10 @@ make
 make test
 make install
 
-as usual. the tests are about halfway comprehensive.
+Please use https://rt.cpan.org/ to report bugs, omissions, cross-site attacks
+that get through, or just to suggest improvements.
 
-
-
-
-
-Copyright 2001 William Ross (will@spanner.org)
+Copyright 2001-3 William Ross (wross@cpan.org)
 
 This library is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
