@@ -1,0 +1,24 @@
+Revision history for Perl extension TagFilter.
+
+0.01  Fri Sep 14 01:19:43 2001
+		Only permission filter: no denial rules.
+		Worked quite well.
+0.02  Mon Sep 17 2001
+		Added denial rules. 
+		Didn't work very well.
+0.03  Tues Sep 18 2001
+		Changed from trying to work out meaning of empty lists to using reserved words 'any', 'all', 'none'. 
+		Denial rules work for a while.
+0.04  Wed Sep 19 2001
+		Added _check() method to allow testing of values deep in HoHoHo without autovivification and subsequent mess. 
+		Denial rules also become less ambitious, more useful. 
+		Pod grows more verbose.
+0.05  Wed Sep 20 2001
+		Added tag/attribute removal logging, and 'log' option, in order that users may be chastised in detail for putting in naughty html. useful for debugging, too.
+0.06  Sun Oct 21 2001
+		Simplified interface with addition of ->filter() and ->report() methods
+		Abandoned attempts to preserve tag order: put back on to do list :(
+		Made pod even more windy.
+		Added 'echo' option to direct output to STDOUT as a proper child of HTML::Parser should, at Gisle Aas' suggestion. makes it more useful to networking applications, i gather.
+
+
