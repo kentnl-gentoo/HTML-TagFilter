@@ -1,11 +1,10 @@
 package HTML::TagFilter;
 use strict;
-
-use Carp ();
+use warnings;
 use base qw(HTML::Parser);
 use vars qw($VERSION);
 
-$VERSION = '0.06';  # $Date: 2001/10/21 $
+$VERSION = '0.07';  # $Date: 2001/10/25 $
 
 =head1 NAME
 
@@ -13,25 +12,26 @@ HTML::TagFilter - An HTML::Parser-based selective tag remover
 
 =head1 SYNOPSIS
 
-	use HTML::TagFilter;
-	my $tf = new HTML::TagFilter;
-	my $clean_html = $tf->filter($dirty_html);
-	
-	# or
-	
-	my $tf = HTML::TagFilter->new(
-		allow=>{...}, 
-		deny=>{...}, 
-		log_rejects => 1, 
-		strip_comments => 1, 
-		echo => 1,
-	);
-	
-	$tf->parse($some_html);
-	$tf->parse($more_html);
-	my $clean_html = $tf->output;
-	my $cleaning_summary = $tf->report;	# string containing summary of rejections
-	my @tags_removed = $tf->report;		# AoH containing detailed rejection record
+    use HTML::TagFilter;
+    my $tf = new HTML::TagFilter;
+    my $clean_html = $tf->filter($dirty_html);
+    
+    # or
+    
+    my $tf = HTML::TagFilter->new(
+        allow=>{...}, 
+        deny=>{...}, 
+        log_rejects => 1, 
+        strip_comments => 1, 
+        echo => 1,
+    );
+    
+    $tf->parse($some_html);
+    $tf->parse($more_html);
+    my $clean_html = $tf->output;
+    my $cleaning_summary = $tf->report;
+    my @tags_removed = $tf->report;
+    my $error_log = $tf->error;
 
 =head1 DESCRIPTION
 
@@ -43,13 +43,13 @@ TagFilter doesn't do anything to or with the text between bits of markup: it's o
 
 The original purpose for this was to screen user input. In that setting you'll often find that just using:
 
-	my $tf = new HTML::TagFilter;
-	put_in_database($tf->filter($my_text));
+    my $tf = new HTML::TagFilter;
+    put_in_database($tf->filter($my_text));
 
 will do. However, it can also be used for display processes (eg text-only translation) or cleanup (eg removal of old javascript). In those cases you'll probably want to override the default rule set with a small number of denial rules. 
 
-	my $filter = HTML::TagFilter->new(deny => {img => {'all'}});
-	print $tf->filter($my_text);
+    my $filter = HTML::TagFilter->new(deny => {img => {'all'}});
+    print $tf->filter($my_text);
 
 Will strip out all images, for example, but leave everything else untouched.
 
@@ -67,7 +67,7 @@ which will produce safe but still formatted html, without images, tables, javasc
 
 use the allow_tags and deny_tags methods to pass in one or more tag settings. eg:
 
-	$filter->allow_tags({ p => { class=> ['lurid','sombre','plain']} });
+    $filter->allow_tags({ p => { class=> ['lurid','sombre','plain']} });
 
 will mean that all attributes other than class="lurid|sombre|plain" will be removed from <p> tags. See below for more about specifying rules.
 
@@ -75,13 +75,13 @@ will mean that all attributes other than class="lurid|sombre|plain" will be remo
 
 To override the defaults completely, supply the constructor with some rules:
 
-	my $filter = HTML::TagFilter->new( allow=>{ p => { class=> ['lurid','sombre','plain']} });
+    my $filter = HTML::TagFilter->new( allow=>{ p => { class=> ['lurid','sombre','plain']} });
 
 Only the rules you supply in this form will be applied. You can achieve the same thing after construction by first clearing the rule set:
 
-	my $filter = HTML::TagFilter->new();
-	$filter->allow_tags({});
-	$filter->allow_tags({ p => { align=> ['left','right','center']} });
+    my $filter = HTML::TagFilter->new();
+    $filter->allow_tags();
+    $filter->allow_tags({ p => { align=> ['left','right','center']} });
 
 Future versions are intended to offer a more sophisticated rule system, allowing you to specify combinations of attributes, ranges for values and generally match names in a more fuzzy way. 
 
@@ -93,12 +93,12 @@ The simple hash interface will continue to work for the foreseeable future, thou
 
 There are currently three switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
 
-	my $tf = HTML::TagFilter->new(
-		log_rejects => 1,
-		strip_comments => 1,
-		echo => 1,
-	);
-	
+    my $tf = HTML::TagFilter->new(
+        log_rejects => 1,
+        strip_comments => 1,
+        echo => 1,
+    );
+    
 =over 4
 
 =item log_rejects
@@ -151,53 +151,49 @@ The two most likely setups are
 
 Rules are passed in as a HoHoL:
 
-	{ tag name->{attribute name}->[valuelist] }
+    { tag name->{attribute name}->[valuelist] }
 
 There are three reserved words: 'any and 'none' stand respectively for 'anything is permitted' and 'nothing is permitted', or if in denial: 'anything is removed' and 'nothing is removed'. 'all' is only used in denial rules and it indicates that the whole tag should be stripped out: see below for an explanation and some mumbled excuses.
 
 For example:
 
-	$filter->allow_tags({ p => { any => [] });
+    $filter->allow_tags({ p => { any => [] });
 
 Will permit <p> tags with any attributes. For clarity's sake it may be shortened to:
 
-	$filter->allow_tags({ p => { 'any' });
+    $filter->allow_tags({ p => { 'any' });
 
-but note that in the absence of the => the quotes are required. And
+but note that you'll get a warning about the odd number of hash elements if -w is on, and in the absence of the => the quotes are required. And
 
-	$filter->allow_tags({ p => { 'none' });
+    $filter->allow_tags({ p => { none => [] });
 
 Will allow <p> tags to remain in the text, but all attributes will be removed. The same rules apply at all levels in the tag/attribute/value hierarchy, so you can say things like:
 
-	$filter->allow_tags({ any => { align => [qw(left center right)] });
-	$filter->allow_tags({ p => { align => ['any'] });
-
-but that last is more easily written
-
-	$filter->allow_tags({ p => { 'align' });
+    $filter->allow_tags({ any => { align => [qw(left center right)] });
+    $filter->allow_tags({ p => { align => ['any'] });
 
 =head2 examples
 
 To indicate that a link destination is ok and you don't mind what value it takes:
 
-	$filter->allow_tags({ a => { 'href' } });
+    $filter->allow_tags({ a => { 'href' } });
 
 To limit the values an attribute can take:
 
-	$filter->allow_tags({ a => { class => [qw(big small middling)] } });
+    $filter->allow_tags({ a => { class => [qw(big small middling)] } });
 
 To clear all permissions:
 
-	$filter->allow_tags({});
+    $filter->allow_tags({});
 
 To remove all onClicks from links but allow all targets:
 
-	$filter->allow_tags({ a => { onClick => ['none'], target => [], } });
+    $filter->allow_tags({ a => { onClick => ['none'], target => [], } });
 
 You can combine allows and denies to create 'unless' rules:
 
-	$filter->allow_tags({ a => { 'any' } });
-	$filter->deny_tags({ a => { 'onClick' } });
+    $filter->allow_tags({ a => { any => [] } });
+    $filter->deny_tags({ a => { onClick => [] } });
 
 Will remove only the onClick attribute of a link, allowing everything else through. If this was your only purpose, you could achieve the same thing just with the denial rule and an empty permission set, but if there's other stuff going on then you probably need this combination.
 
@@ -211,19 +207,19 @@ denial rules are applied first. we take out whatever you specify in deny, then t
 
 Only one deliberate one, so far. The main asymmetry between permission and denial rules is that from
 
-	allow_tags->{ p => {...}}
+    allow_tags->{ p => {...}}
 
 it follows that p tags are permitted, but the reverse is not true: 
 
-	deny_tags->{ p => {...}}
+    deny_tags->{ p => {...}}
 
 doesn't imply that p tags are removed, just that the relevant attributes are removed from them. If you want to use a denial rule to eliminate a whole tag, you have to say so explicitly:
 
-	deny_tags->{ p => {'all'}}
+    deny_tags->{ p => {'all'}}
 
 will remove every <p> tag, whereas
 
-	deny_tags->{ p => {'any'}}
+    deny_tags->{ p => {'any'}}
 
 will just remove all the attributes from <p> tags. Not very pretty, I know. It's likely to change, but probably not until after we've invented a system for supplying rules in a more readable format.
 
@@ -232,60 +228,64 @@ will just remove all the attributes from <p> tags. Not very pretty, I know. It's
 my $errstr;
 
 my $allowed_by_default = {
-	h1 => { 'none' },
-	h2 => { 'none' },
-	h3 => { 'none' },
-	h4 => { 'none' },
-	h5 => { 'none' },
-	p => { 'none' },
-	a => { href => [], name => [], target => [] },
-	br => { clear => [qw(left right all)]},
-	ul =>{ 'type' },
-	li =>{ 'type' },
-	ol => { 'none' },
-	em => { 'none' },
-	i => { 'none' },
-	b => { 'none' },
-	tt => { 'none' },
-	pre => { 'none' },
-	code => { 'none' },
-	blockquote => { 'none'},
-	img => { 'any' },
-	any => { align => [qw(left right center)]  },
+    h1 => { none => [] },
+    h2 => { none => [] },
+    h3 => { none => [] },
+    h4 => { none => [] },
+    h5 => { none => [] },
+    p => { none => [] },
+    a => { href => [], name => [], target => [] },
+    br => { clear => [qw(left right all)] },
+    ul =>{ type => [] },
+    li =>{ type => [] },
+    ol => { none => [] },
+    em => { none => [] },
+    i => { none => [] },
+    b => { none => [] },
+    tt => { none => [] },
+    pre => { none => [] },
+    code => { none => [] },
+    hr => { none => [] },
+    blockquote => { none => [] },
+    img => { src => [], height => [], width => [], alt => [], align => [] },
+    any => { align => [qw(left right center)]  },
 };
 
 my $denied_by_default = {
-	blink => { 'all' },
-	marquee => { 'all' },
-	img => { 'all' },
-	any => { style => [], class => [], onMouseover => [], onClick => [], onMouseout => [], },
+    blink => { all => [] },
+    marquee => { all => [] },
+    any => { style => [], class => [], onMouseover => [], onClick => [], onMouseout => [], },
 };
 
 sub new {
     my $class = shift;
-	my $config = {@_};
+    my $config = {@_};
     
     my $filter = $class->SUPER::new(api_version => 3);
 
     $filter->SUPER::handler(start => "_filter_start", 'self, tagname, attr');
     $filter->SUPER::handler(end =>  "_filter_end", 'self, tagname');
     $filter->SUPER::handler(default => "_add_to_output", "self, text");
-    $filter->SUPER::handler(comment => "") if $config->{strip_comments};
+    $filter->SUPER::handler(comment => "") if delete $config->{strip_comments};
 
-	$filter->{_allows} = {};
-	$filter->{_denies} = {};
-	$filter->{_log} = ();
+    $filter->{_allows} = {};
+    $filter->{_denies} = {};
+    $filter->{_settings} = {};
+    $filter->{_log} = ();
+    $filter->{_error} = ();
 
-	$config->{allow} ||= $allowed_by_default;
-	$config->{deny} ||= $denied_by_default;
+    $config->{allow} ||= $allowed_by_default;
+    $config->{deny} ||= $denied_by_default;
 
-	$filter->allow_tags($config->{allow});
-	$filter->deny_tags($config->{deny});
-	
-	$filter->{settings}->{log} = 1 if $config->{log_rejects};
-	$filter->{settings}->{echo} = 1 if $config->{echo};
-	
-	return $filter;
+    $filter->allow_tags(delete $config->{allow});
+    $filter->deny_tags(delete $config->{deny});
+    
+    $filter->{_settings}->{log} = 1 if delete $config->{log_rejects};
+    $filter->{_settings}->{echo} = 1 if delete $config->{echo};
+    
+    $filter->_log_error("[warning] ignored config field: $_") for keys %$config;
+    
+    return $filter;
 }
 
 =head1 METHODS
@@ -300,13 +300,13 @@ If called without parameters, loads the default set. Otherwise loads the rules y
 
 Exactly equivalent to:
 
-	$tf->parse($html);
-	$tf->output();
+    $tf->parse($html);
+    $tf->output();
 
 but more useful, because it'll fit in a oneliner. eg:
 
-	print $tf->filter( $pages{$_} ) for keys %pages;
-	
+    print $tf->filter( $pages{$_} ) for keys %pages;
+    
 Note that calling filter() will clear anything that was waiting in the output buffer, and will clear the buffer again when it's finished. it's meant to be a one-shot operation and doesn't co-operate well. use parse() and output() if you want to daisychain.
 
 =back
@@ -314,10 +314,10 @@ Note that calling filter() will clear anything that was waiting in the output bu
 =cut
 
 sub filter {
-	my ($filter,$text) = @_;
-	$filter->{output} = '';
-	$filter->parse($text);
-	return $filter->output() unless $filter->{settings}->{echo};
+    my ($filter,$text) = @_;
+    $filter->{output} = '';
+    $filter->parse($text);
+    return $filter->output() unless $filter->{_settings}->{echo};
 }
 
 =over 4
@@ -340,28 +340,30 @@ in scalar context returns a more or less readable summary. returns () if logging
 =cut
 
 sub output {
-	my $filter = shift;
-	$filter->eof;
-	my $output = $filter->{output};
-	$filter->{output} = '';
-	return $output;
+    my $filter = shift;
+    $filter->eof;
+    my $output = $filter->{output};
+    $filter->_log_error("[warning] no output from filter") unless $output;
+    $filter->{output} = '';
+    return $output;
 }
 
 sub report {
     my $filter = shift;
+    return () unless defined $filter->{_log};
     my @rejects = @{ $filter->{_log} };
     $filter->{_log} = ();
-	return @rejects if wantarray;
+    return @rejects if wantarray;
 
     my $report = "the following tags and attributes have been stripped:\n";
     for (@rejects) {
-    	if ($_->{attribute}) {
-	    	$report .= $_->{attribute} . '="' . $_->{value} . '" from the tag &lt;' . $_->{tag} . "&gt;\n";
-    	} else {
-	    	$report .= '&lt;' . $_->{tag} . "&gt;\n";
-    	}
+        if ($_->{attribute}) {
+            $report .= $_->{attribute} . '="' . $_->{value} . '" from the tag &lt;' . $_->{tag} . "&gt;\n";
+        } else {
+            $report .= '&lt;' . $_->{tag} . "&gt;\n";
+        }
     }
-	return $report;
+    return $report;
 }
 
 # _filter_start(): the designated handler for start tags: tests them against the _tag_ok() function
@@ -371,17 +373,17 @@ sub report {
 sub _filter_start {
     my ($filter, $tagname, $attr) = @_;
     if ($filter->_tag_ok(lc($tagname))) {
-    	for (keys %$attr) {
-    		unless ($filter->_attribute_ok(lc($tagname), lc($_), lc($$attr{$_}))) {
-       			$filter->_log_denied({ tag => $tagname, attribute => $_, value => $$attr{$_} }) if $filter->{settings}->{log};
-    			delete $$attr{$_};
-    		}
-		}
-		my $filtered_tag = "<$tagname" . join('',map(qq| $_="$$attr{$_}"|, keys %$attr)) . ">";
-	    $filter->_add_to_output($filtered_tag);
-	} else {
-    	$filter->_log_denied({tag => $tagname}) if $filter->{settings}->{log};
-	}
+        for (keys %$attr) {
+            unless ($filter->_attribute_ok(lc($tagname), lc($_), lc($$attr{$_}))) {
+                   $filter->_log_denied({ tag => $tagname, attribute => $_, value => $$attr{$_} }) if $filter->{_settings}->{log};
+                delete $$attr{$_};
+            }
+        }
+        my $filtered_tag = "<$tagname" . join('',map(qq| $_="$$attr{$_}"|, keys %$attr)) . ">";
+        $filter->_add_to_output($filtered_tag);
+    } else {
+        $filter->_log_denied({tag => $tagname}) if $filter->{_settings}->{log};
+    }
 }
 
 # _filter_end(): the designated handler for end tags: tests them against the _tag_ok() function
@@ -393,119 +395,130 @@ sub _filter_end {
 }
 
 sub _add_to_output {
-	my $filter = shift;
-	if ($filter->{settings}->{echo}) {
-		print $_[0];
-	} else {
-		$filter->{output} .= $_[0];
-	}
+    my $filter = shift;
+    if ($filter->{_settings}->{echo}) {
+        print $_[0];
+    } else {
+        $filter->{output} .= $_[0];
+    }
 }
 
 sub _log_denied {
     my ($filter, $bad_tag) = @_;
-	push @{ $filter->{_log} } , $bad_tag;
+    push @{ $filter->{_log} } , $bad_tag;
 }
 
 sub _tag_ok {
     my ($filter, $tagname) = @_;
     return 0 unless $filter->{_allows} || $filter->{_denies};
-	return 0 if $filter->_check('_denies', 'attributes', $tagname, 'all');
-	return 1 if $filter->_check('_allows', 'tags', $tagname);
-	return 0;
+    return 0 if $filter->_check('_denies', 'attributes', $tagname, 'all');
+    return 1 if $filter->_check('_allows', 'tags', $tagname);
+    return 0;
 }
 
 sub _attribute_ok {
     my ($filter, $tagname, $attribute, $value) = @_;    
 
-	return 0 if $filter->_check('_denies','values', $tagname, $attribute, 'any',);
-	return 0 if $filter->_check('_denies','values', $tagname, $attribute, $value,);
-	return 0 if $filter->_check('_denies','attributes', $tagname, 'any',);
+    return 0 if $filter->_check('_denies','values', $tagname, $attribute, 'any',);
+    return 0 if $filter->_check('_denies','values', $tagname, $attribute, $value,);
+    return 0 if $filter->_check('_denies','attributes', $tagname, 'any',);
 
-	return 1 if $filter->_check('_allows','values', 'any', $attribute, 'any',);
-	return 1 if $filter->_check('_allows','values', 'any', $attribute, $value,);
+    return 1 if $filter->_check('_allows','values', 'any', $attribute, 'any',);
+    return 1 if $filter->_check('_allows','values', 'any', $attribute, $value,);
 
-	return 1 if $filter->_check('_allows','attributes', $tagname, 'any',);
-	return 1 if $filter->_check('_allows','values', $tagname, $attribute, 'any',);
-	return 1 if $filter->_check('_allows','values', $tagname, $attribute, $value,);
-	return 0;
+    return 1 if $filter->_check('_allows','attributes', $tagname, 'any',);
+    return 1 if $filter->_check('_allows','values', $tagname, $attribute, 'any',);
+    return 1 if $filter->_check('_allows','values', $tagname, $attribute, $value,);
+    return 0;
 }
 
 # _check(): a private function to test for a value buried deep in a HoHoHo 
 # without cluttering the place up with autovivifications.
 
 sub _check {
-	my $filter = shift;
-	my $field = shift;
-	my @russian_dolls = @_;
-	warn '_check: no keys supplied' and return 0 unless @russian_dolls;
-	my $deepref = $filter->{$field};
-	for (@russian_dolls) {
-		warn "_check: deepref not a hashref" and return 0 unless ref $deepref eq 'HASH';
-		return 0 unless $deepref->{$_};
-		$deepref = $deepref->{$_};
-	}
-	return 1;
+    my $filter = shift;
+    my $field = shift;
+    my @russian_dolls = @_;
+    unless (@russian_dolls) {
+        $filter->_log_error("[warning] _check: no keys supplied");
+        return 0;
+    }
+    my $deepref = $filter->{$field};
+    for (@russian_dolls) {
+        unless (ref $deepref eq 'HASH') {
+            $filter->_log_error("[error] _check: deepref not a hashref");
+            return 0;
+        }
+        return 0 unless $deepref->{$_};
+        $deepref = $deepref->{$_};
+    }
+    return 1;
 }
 
 =over 4
 
 =item $filter->allow_tags($hashref)
 
-Takes a hashref of permissions and requests their translation into the lookup structure we're using to apply rules. The supplied rules are added to what we already have, replacing at the tag level anything that is already here. In other words, you can add a tag to the existing set, but to add an attribute to an existing tag you have to specify the whole set of attribute permissions.  If no rules are sent, this clears the permission rule set.
+Takes a hashref of permissions and adds them to what we already have, replacing at the tag level where rules are already defined. In other words, you can add a tag to the existing set, but to add an attribute to an existing tag you have to specify the whole set of attribute permissions.  If no rules are sent, this clears the permission rule set.
 
 =item $filter->deny_tags($hashref)
 
 likewise but sets up (or clears) denial rules.
 
+=back
+
 =cut
 
 sub allow_tags {
     my ($filter, $tagset) = @_;
- 	$errstr = "allow_tags: supplied rules not a hashref" and return () unless ref $tagset eq 'HASH';
-   
     if ($tagset) {
-    	$filter->_configurise('_allows',$tagset);
+        $filter->_configurise('_allows',$tagset);
     } else {
-		$filter->{_allows} = {};
+        $filter->{_allows} = {};
     }
     return 1;
 }
 
 sub deny_tags {
     my ($filter, $tagset) = @_;
-  	$errstr = "deny_tags: supplied rules not a hashref" and return () unless ref $tagset eq 'HASH';
-
    if ($tagset) {
-    	$filter->_configurise('_denies',$tagset);
+        $filter->_configurise('_denies',$tagset);
     } else {
-		$filter->{_denies} = {};
+        $filter->{_denies} = {};
     }
     return 1;
 }
 
 # _configurise(): a private function that translates input rules into
-# the silly HoHoHo's we're using for lookup.
+# the bushy HoHoHo's we're using for lookup.
 
 sub _configurise {
     my ($filter, $field, $tagset) = @_;
-	foreach my $tag (keys %$tagset) {
-		$filter->{$field}->{tags}->{$tag} = 1;
-		foreach my $att (keys %{ $tagset->{$tag} }) {
-			$filter->{$field}->{attributes}->{$tag}->{$att} = 1;
-			$filter->{$field}->{values}->{$tag}->{$att}->{any} = 1 unless 
-				defined( $tagset->{$tag}->{$att} ) && @{ $tagset->{$tag}->{$att} };
-			foreach my $val (@{ $tagset->{$tag}->{$att} }) {
-				$filter->{$field}->{values}->{$tag}->{$att}->{$val} = 1;
-			}
-		}
-	}
+
+     unless (ref $tagset eq 'HASH') {
+         $filter->_log_error("[error] _configurise: supplied rules not a hashref");
+         return ();
+     }
+     $filter->_log_error("[warning] _configurise: supplied rule set empty") unless keys %$tagset;
+
+    foreach my $tag (keys %$tagset) {
+        $filter->{$field}->{tags}->{$tag} = 1;
+        foreach my $att (keys %{ $tagset->{$tag} }) {
+            $filter->{$field}->{attributes}->{$tag}->{$att} = 1;
+            $filter->{$field}->{values}->{$tag}->{$att}->{any} = 1
+            	unless defined( $tagset->{$tag}->{$att} ) && @{ $tagset->{$tag}->{$att} };
+            foreach my $val (@{ $tagset->{$tag}->{$att} }) {
+                $filter->{$field}->{values}->{$tag}->{$att}->{$val} = 1;
+            }
+        }
+    }
 }
 
 =over 4
 
 =item $filter->allows()
 
-Returns the full set of permissions. Can't be set this way: just a utility function in case you want to either display the rule set, or send it back to allow_tags in a modified form.
+Returns the full set of permissions as a HoHoho. Can't be set this way: ust a utility function in case you want to either display the rule set, or send it back to allow_tags in a modified form.
 
 =item $filter->denies()
 
@@ -517,19 +530,42 @@ Likewise for denial rules.
 
 sub allows {
     my $filter = shift;
-	return $filter->{_allows};
+    return $filter->{_allows};
 }
 
 sub denies {
     my $filter = shift;
-	return $filter->{_denies};
+    return $filter->{_denies};
+}
+
+=over 4
+
+=item $filter->error()
+
+Returns an error report of currently dubious usefulness.
+
+=back
+
+=cut
+
+sub error {
+    my $filter = shift;
+    return "HTML::TagFilter errors:\n" . join("\n", @{$filter->{_error}}) if $filter->{_error};
+	return '';
+}
+
+# _log_error: append a message to the error log
+
+sub _log_error {
+    my $filter = shift;
+    push @{ $filter ->{_error} } , @_;
 }
 
 # handler() exists here only to admonish people who try to use this module as they would
-# HTML::Parser. Handler definitions in new() therefore have to use SUPER::handler().
+# HTML::Parser. The handler definitions in new() use SUPER::handler() to get around this.
 
 sub handler {
-	Carp::croak("You can't set handlers for HTML::TagFilter.");
+    die("You can't set handlers for HTML::TagFilter. Perhaps you should be using HTML::Parser directly?");
 }
 
 1;
