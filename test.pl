@@ -7,10 +7,11 @@
 # (It may become useful if the test is moved to ./t subdirectory.)
 
 BEGIN { $| = 1; print "1..1\n"; }
-END {print "not ok 1\n" unless $loaded;}
+END {print "not ok 1: load failed\n" unless $loaded;}
 use HTML::TagFilter;
 $loaded = 1;
-print "ok 1: module loaded\n";
+$version = $HTML::TagFilter::VERSION;
+print "ok 1: module loaded. Version is $version\n";
 
 ######################### End of black magic.
 
@@ -57,7 +58,7 @@ $result = $tf2->filter("<p><blink>testing</blink></p><!--hey-->");
 print ($result eq "<p>testing</p>" ? "ok 10: comment deleted\n" : "not ok 10: '$result'\n");
 
 $result = $tf2->report;
-print ($result ? "not ok 11: '$result'\n" : "ok 11: report empty\n");
+print ($result ? "not ok 11: '$result'\n" : "ok 11: report properly empty\n");
 
 my $tf3 = HTML::TagFilter->new( 
 	allow => { p => { class=> [qw(lurid sombre plain)] } },
@@ -71,15 +72,20 @@ my $tf4 = HTML::TagFilter->new(
 $result = $tf4->filter(qq|<p class="lurid"><b>testing</b></p>|);
 print ($result eq qq|<p><b>testing</b></p>| ? "ok 13: forbidden attribute\n" : "not ok 13: '$result'\n");
 
-$result = $tf2->filter(qq|<img src="javascript:alert(1)">|);
-print ($result eq qq|<img src="alert(1)">| ? "ok 14: javascript: stripped\n" : "not ok 14: '$result'\n");
+$result = $tf2->filter(qq|<img src="1" height="2" width="3" alt="4" align="5">|);
+print ($result eq qq|<img src="1" height="2" width="3" alt="4" align="5">| ? "ok 14: attribute order preserved\n" : "not ok 14: '$result'\n");
 
 $result = $tf2->filter(qq|<h1 none="javascript:alert(1)">oops</h1>|);
 print ($result eq qq|<h1>oops</h1>| ? "ok 15: none is magic\n" : "not ok 15: '$result'\n");
 
-$result = $tf2->filter(qq|<img src="1" height="2" width="3" alt="4" align="5">|);
-print ($result eq qq|<img src="1" height="2" width="3" alt="4" align="5">| ? "ok 16: attribute order preserved\n" : "not ok 16: '$result'\n");
+$result = $tf2->filter(qq|<a name="&quot;></a><script>alert(1)</script><i foo=&quot;">hello</i>|);
+print ($result eq qq|<a name="&quot;></a><script>alert(1)</script><i foo=&quot;">hello</i>| ? "ok 16: quote unquote loophole closed\n" : "not ok 16: '$result'\n");
 
+$result = $tf2->filter(qq|<img src="javascript:alert(1)">|);
+print ($result eq qq|<img src="">| ? "ok 17: malicious src attribute stripped out\n" : "not ok 17: '$result'\n");
+
+$result = $tf2->filter(qq|<a href="javascript:alert(1)">hello</a>|);
+print ($result eq qq|<a href="">hello</a>| ? "ok 18: malicious href attribute stripped out\n" : "not ok 18: '$result'\n");
 
 
 

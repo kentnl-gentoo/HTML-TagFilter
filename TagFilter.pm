@@ -1,10 +1,10 @@
 package HTML::TagFilter;
 use strict;
-use warnings;
+
 use base qw(HTML::Parser);
 use vars qw($VERSION);
 
-$VERSION = '0.072';  # $Date: 2003/07/22 $
+$VERSION = '0.073';  # $Date: 2003/07/22 $
 
 =head1 NAME
 
@@ -24,8 +24,7 @@ HTML::TagFilter - An HTML::Parser-based selective tag remover
         log_rejects => 1, 
         strip_comments => 1, 
         echo => 1,
-        no_escape => 1,
-        keep_javascript => 1,
+        skip_xss_protection => 1,
     );
     
     $tf->parse($some_html);
@@ -37,11 +36,11 @@ HTML::TagFilter - An HTML::Parser-based selective tag remover
 
 =head1 DESCRIPTION
 
-The tentatively titled HTML::TagFilter is a subclass of HTML::Parser with a single purpose: it will remove unwanted html tags and attributes from a piece of text. It can act in a more or less fine-grained way - you can specify permitted tags, permitted attributes of each tag, and permitted values for each attribute in as much detail as you like.
+HTML::TagFilter is a subclass of HTML::Parser with a single purpose: it will remove unwanted html tags and attributes from a piece of text. It can act in a more or less fine-grained way - you can specify permitted tags, permitted attributes of each tag, and permitted values for each attribute in as much detail as you like.
 
 Tags which are not allowed are removed. Tags which are allowed are trimmed down to only the attributes which are allowed for each tag. It is possible to allow all or no attributes from a tag, or to allow all or no values for an attribute, and so on.
 
-TagFilter doesn't do anything to or with the text between bits of markup: it's only interested in the tags.
+(As of version 0.73 the filter will also guard against some common cross-site scripting attacks, unless you tell it not to).
 
 The original purpose for this was to screen user input. In that setting you'll often find that just using:
 
@@ -93,14 +92,13 @@ The simple hash interface will continue to work for the foreseeable future, thou
 
 =head1 CONFIGURATION: BEHAVIOURS
 
-There are currently five switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
+There are currently four switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off'.
 
     my $tf = HTML::TagFilter->new(
         log_rejects => 1,
         strip_comments => 1,
         echo => 1,
-        no_escape => 1,
-        keep_javascript => 1,
+        skip_xss_protection => 1,
     );
     
 =over 4
@@ -117,13 +115,9 @@ Set echo to 1, or anything true, and the output of the filter will be sent strai
 
 Set strip_comments to 1 and comments will be stripped. If you don't, they won't.
 
-=item no_escape
+=item skip_xss_protection
 
-Set no_escape to 1 to prevent the filter from turning < and > characters in the main text into html entities.
-
-=item keep_javascript
-
-Unless you set keep_javascript to 1, the string 'javascript:' will be removed from every attribute value.
+Unless you set skip_xss_protection to 1, the filter will postprocess some of its output to protect against common cross-site scripting attacks. It will entify any < and > in non-tag text, entify quotes in attribute values (the Parser will have unencoded them) and check that href and src values look suitably like urls. Be warned, though: it's a fast-moving threat, and you can assume we are two steps behind the latest innovations even if your filter is up to date.
 
 =back
 
@@ -279,7 +273,6 @@ sub new {
     $filter->SUPER::handler(end =>  "filter_end", 'self, tagname');
     $filter->SUPER::handler(default => "clean_text", "self, text");
     $filter->SUPER::handler(comment => "") if delete $config->{strip_comments};
-	$filter->attr_encoded(1);
 	
     $filter->{_allows} = {};
     $filter->{_denies} = {};
@@ -296,7 +289,7 @@ sub new {
     $filter->{_settings}->{log} = 1 if delete $config->{log_rejects};
     $filter->{_settings}->{echo} = 1 if delete $config->{echo};
     $filter->{_settings}->{entify} = 1 unless delete $config->{no_escape};
-    $filter->{_settings}->{remove_javascript} = 1 unless delete $config->{keep_javascript};
+    $filter->{_settings}->{xss} = 1 unless delete $config->{skip_xss_protection};
     
     $filter->_log_error("[warning] ignored config field: $_") for keys %$config;
     
@@ -388,13 +381,13 @@ sub report {
 sub filter_start {
     my ($filter, $tagname, $attr, $attrseq) = @_;
     if ($filter->_tag_ok(lc($tagname))) {
-        for (keys %$attr) {
+        for (@$attrseq) {
             unless ($filter->_attribute_ok(lc($tagname), lc($_), lc($$attr{$_}))) {
                 $filter->_log_denied({ tag => $tagname, attribute => $_, value => $$attr{$_} }) if $filter->{_settings}->{log};
                 delete $$attr{$_};
             }
         }
-        my $filtered_tag = "<$tagname" . join('', map { " $_=\"" . $filter->_xss_clean_attribute($attr->{$_}) . '"' } grep { exists $attr->{$_} } @$attrseq) . ">";
+        my $filtered_tag = "<$tagname" . join('', map { " $_=\"" . $filter->_xss_clean_attribute($attr->{$_}, $_) . '"' } grep { exists $attr->{$_} } @$attrseq) . ">";
         $filter->_add_to_output($filtered_tag);
     } else {
         $filter->_log_denied({tag => $tagname}) if $filter->{_settings}->{log};
@@ -418,18 +411,37 @@ sub clean_text {
 
 sub _xss_clean_text {
     my ($filter, $text) = @_;
-    return $text unless $filter->{_settings}->{entify};
+    return $text unless $filter->{_settings}->{xss};
     $text =~ s/\>/&gt;/gs;
     $text =~ s/\</&lt;/gs;
     return $text;
 }
 
+sub xss_risky_attributes { return { map { $_=>1 } qw(src href) } }
+
 # _xss_clean_attribute(): the default action carried out on attribute values. defends against basic XSS by quoting "
 
 sub _xss_clean_attribute {
-    my ($filter, $text) = @_;
-	$text =~ s/javascript://igs if $filter->{_settings}->{remove_javascript};
+    my ($filter, $text, $att) = @_;
+    return $text unless $filter->{_settings}->{xss};
+	$text =~ s/"/&quot;/igs;
+	$text =~ s/'/&rsquot;/igs;
+    my $risky = $filter->xss_risky_attributes;
+	return $filter->_xss_clean_href($text, $att) if $risky->{$att};
     return $text;
+}
+
+sub _xss_clean_href {
+    my ($filter, $text, $att) = @_;
+    return $text unless $filter->{_settings}->{xss};
+	return $text if $text !~ /:/s;
+	return $text if $text =~ /^http:\/\//s;
+	return $text if $text =~ /^https:\/\//s;
+	return $text if $text =~ /^ftp:\/\//s;
+	return $text if $text =~ /^\//s;
+	return $text if $text =~ /^\.\.\//s;
+	$filter->_log_denied("$att failed xss filter: $text");
+	return '';
 }
 
 sub _add_to_output {
@@ -609,6 +621,10 @@ sub _log_error {
 
 sub handler {
     die("You can't set handlers for HTML::TagFilter. Perhaps you should be using HTML::Parser directly?");
+}
+
+sub version {
+	return $VERSION;
 }
 
 1;
