@@ -44,7 +44,7 @@ my $tf2 = HTML::TagFilter->new(
 	},
 	on_finish_document => sub {
 		my ($self, $cleantext) = @_;
-		return join '', map "</$_>", @{ $self->{_tag_stack} };
+		return join '', map "</$_>", reverse @{ $self->{_tag_stack} };
 	},
 );
 
@@ -59,5 +59,5 @@ is( $tf2->filter(
 	qq|<p>Mother, I can feel the soil falling over my head</p>|, "callbacks: unopened tags omitted");
 
 is( $tf2->filter(
-	qq|<p>Mother, I can feel the <b><i>soil</b> falling over my head</i>|), 
-	qq|<p>Mother, I can feel the <b><i>soil</i></b> falling over my head</p>|, "callbacks: bad nesting mended");
+	qq|<p>Mother, <strong>I can feel the <b><i>soil</b> falling over my <em>head</i>|), 
+	qq|<p>Mother, <strong>I can feel the <b><i>soil</i></b> falling over my <em>head</em></strong></p>|, "callbacks: bad nesting mended");

@@ -1,5 +1,12 @@
 Revision history for Perl extension HTML::TagFilter.
 
+1.01  Sun Oct 15 2005
+    - tweaked trigger points so that tag acceptability tests are called
+      first: avoids situations where the callback sub is doing something
+      with a tag that will then be rejected. stupido! 
+    - also fixed a couple of minor bugs in sample code
+    - tweaked default acceptance rules to include <strong>
+
 1.0	  Sun Oct 15 2005
 	- handy hooks added in response to various requests for added 
 	  functionality. See spanner.org/tagfilter for recipes.

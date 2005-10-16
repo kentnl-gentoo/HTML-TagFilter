@@ -4,7 +4,7 @@ use base qw(HTML::Parser);
 use URI::Escape;
 use vars qw($VERSION);
 
-$VERSION = '1.0';
+$VERSION = '1.01';
 
 =head1 NAME
 
@@ -296,6 +296,7 @@ sub allowed_by_default {
 		em => { none => [] },
 		i => { none => [] },
 		b => { none => [] },
+		strong => { none => [] },
 		tt => { none => [] },
 		pre => { none => [] },
 		code => { none => [] },
@@ -403,7 +404,7 @@ The example below will maintain a stack of seen tags and make the filter repair 
 	},
 	on_finish_document => sub {
 		my ($self, $cleantext) = @_;
-		return join '', map "</$_>", @{ $self->{_tag_stack} };
+		return join '', map "</$_>", reverse @{ $self->{_tag_stack} };
 	},
   );
 
@@ -531,8 +532,9 @@ This is the handler for html start tags: it checks the tag against the current s
 
 sub filter_start {
     my ($self, $tagname, $attributes, $attribute_sequence) = @_;
+    return unless $self->tag_ok(lc($tagname));
     $self->_call_trigger('on_open_tag', \$tagname, $attributes, $attribute_sequence);
-    return unless $tagname && $self->tag_ok(lc($tagname));
+    return unless $tagname;
     
     for (@$attribute_sequence) {
         my @data = (lc($tagname), lc($_), lc($attributes->{$_}));      # (tag, attribute, value)
@@ -550,8 +552,10 @@ This is the handler for html end tags: it checks the tag against the current set
 
 sub filter_end {
     my ($self, $tagname) = @_;
+    return unless $self->tag_ok(lc($tagname));
     $self->_call_trigger('on_close_tag', \$tagname);
-    $self->add_to_output( "</$tagname>" ) if $tagname && $self->_tag_ok(lc($tagname));
+    return unless $tagname;
+    $self->add_to_output( "</$tagname>" );
 }
 
 =head3 clean_text($text);
