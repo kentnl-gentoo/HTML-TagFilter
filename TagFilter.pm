@@ -1,12 +1,10 @@
 package HTML::TagFilter;
 use strict;
-
 use base qw(HTML::Parser);
 use URI::Escape;
-
 use vars qw($VERSION);
 
-$VERSION = '0.091';
+$VERSION = '1.0';
 
 =head1 NAME
 
@@ -26,12 +24,21 @@ HTML::TagFilter - A fine-grained html-filter, xss-blocker and mailto-obfuscator
         log_rejects => 1, 
         strip_comments => 1, 
         echo => 1,
+        verbose => 1,
         skip_xss_protection => 1,
-        skip_ltgt_entification => 1,
+        skip_entification => 1,
         skip_mailto_entification => 1,
         xss_risky_attributes => [...],
         xss_permitted_protocols => [...],
         xss_allow_local_links => 1,
+    );
+    
+    # or
+
+    my $tf = HTML::TagFilter->new(
+        on_finish_document =>sub {
+        	return "\n<p>" . $self->report . "</p>\n";
+        }, 
     );
     
     $tf->parse($some_html);
@@ -40,7 +47,7 @@ HTML::TagFilter - A fine-grained html-filter, xss-blocker and mailto-obfuscator
     my $cleaning_summary = $tf->report;
     my @tags_removed = $tf->report;
     my $error_log = $tf->error;
-
+    
 =head1 DESCRIPTION
 
 HTML::TagFilter is a subclass of HTML::Parser with a single purpose: it will remove unwanted html tags and attributes from a piece of text. It can act in a more or less fine-grained way - you can specify permitted tags, permitted attributes of each tag, and permitted values for each attribute in as much detail as you like.
@@ -62,6 +69,8 @@ will do. However, it can also be used for display processes (eg text-only transl
 Will strip out all images, for example, but leave everything else untouched.
 
 nb (faq #1) the filter only removes the tags themselves: all it does to text which is not part of a tag is to escape the <s and >s, to guard against false negatives and some common cross-site attacks.
+
+obPascal: Sorry about the incredibly long documentation, by the way. When I have time I'll make it shorter.
 
 =head1 CONFIGURATION: RULES
 
@@ -96,14 +105,15 @@ In this case only the rules you supply will be applied: the defaults are ignored
 
 Future versions are intended to offer a more sophisticated rule system, allowing you to specify combinations of attributes, ranges for values and generally match names in a more fuzzy way.
 
-=head1 CONFIGURATION: BEHAVIOURS
+=head1 CONFIGURATION: BEHAVIOUR
 
-There are currently six switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off':
+There are currently seven switches that will change the behaviour of the filter. They're supplied at construction time alongside any rules you care to specify. All of them default to 'off':
 
   my $tf = HTML::TagFilter->new(
     log_rejects => 1,
     strip_comments => 1,
     echo => 1,
+    verbose => 1,
     skip_xss_protection => 1,
     skip_ltgt_entification => 1,
     skip_mailto_entification => 1,
@@ -111,19 +121,23 @@ There are currently six switches that will change the behaviour of the filter. T
     
 =over 4
 
-=item log_rejects
+=head3 log_rejects
 
 Set log to something true and the filter will keep a detailed log of all the tags it removes. The log can be retrieved by calling report(), which will return a summary in scalar context and a detailed AoH in list.
 
-=item echo
+=head3 echo
 
 Set echo to 1, or anything true, and the output of the filter will be sent straight to STDOUT. Otherwise the filter is silent until you call output().
 
-=item strip_comments
+=head3 verbose
+
+Set verbose to 1, or anything true, and error messages will be output to STDERR as well as being stockpiled ready for a call to error().
+
+=head3 strip_comments
 
 Set strip_comments to 1 and comments will be stripped. If you don't, they won't.
 
-=item skip_xss_protection
+=head3 skip_xss_protection
 
 Unless you set skip_xss_protection to 1, the filter will postprocess some of its output to protect against common cross-site scripting attacks. 
 
@@ -131,17 +145,17 @@ It will entify any < and > in non-tag text, entify quotes in attribute values (t
 
     $self->xss_risky_attributes( qw(your list of attributes) );
 
-=item skip_ltgt_entification
+=head3 skip_ltgt_entification
 
 Disables the entification of < and > even if cross-site protection is on.
 
-=item skip_mailto_entification
+=head3 skip_mailto_entification
 
 Unless you specify otherwise, any mailto:url seen by the filter is completely turned into html entities. <a href="mailto:wross@cpan.org">will</a> becomes <a href="%6D%61%69%6C%74%6F%3A%77%72%6F%73%73%40%63%70%61%6E%2E%6F%72%67">will</a>
 
 This should defeat most email-harvesting software, but note that it has no effect on the text of your link, only its address. Links like <a href="mailto:wross@cpan.org">wross@cpan.org</a> are only partly obscured.
 
-=item other constructor parameters
+=head3 other constructor parameters
 
 You can also supply values that will be used as default values for the methods of the same name:
 
@@ -162,11 +176,11 @@ Each element is tested as it is encountered, in two stages:
 
 =over 4
 
-=item tag filter
+=head3 tag filter
 
 Just checks that this tag is permitted, and blocks the whole thing if not. Applied to both opening and closing tags.
 
-=item attribute filter
+=head3 attribute filter
 
 Any tag that passes the tag filter will remain in the text, but the attribute filter will strip out of it any attributes that are not permitted, or which have values that are not permitted for that tag/attribute combination.
 
@@ -310,39 +324,134 @@ sub new {
     $self->SUPER::handler(end =>  "filter_end", 'self, tagname');
     $self->SUPER::handler(default => "clean_text", "self, text");
     $self->SUPER::handler(comment => "") if delete $config->{strip_comments};
-	
+    
     $self->{_allows} = {};
     $self->{_denies} = {};
     $self->{_settings} = {};
     $self->{_log} = ();
     $self->{_error} = ();
+    $self->{_triggers} = ();
 
     $config->{allow} = allowed_by_default() unless $config->{allow} || $config->{deny};
     $config->{deny} = denied_by_default() unless $config->{allow} || $config->{deny};
 
+    $self->_add_trigger($_ => delete $config->{$_}) for (qw(on_construct on_start_document on_open_tag on_process_text on_close_tag on_finish_document));
     $self->allow_tags(delete $config->{allow});
     $self->deny_tags(delete $config->{deny});
     
     $self->{_settings}->{log} = 1 if delete $config->{log_rejects};
     $self->{_settings}->{echo} = 1 if delete $config->{echo};
     $self->{_settings}->{xss} = 1 unless delete $config->{skip_xss_protection};
-    $self->{_settings}->{ltgt} = 1 unless delete $config->{skip_ltgt_entification};
+    $self->{_settings}->{ent} = 1 unless delete $config->{skip_entification} || delete $config->{skip_ltgt_entification};
     $self->{_settings}->{mailto} = 1 unless delete $config->{skip_mailto_entification};
-    
+    $self->{_settings}->{verbose} = 1 if delete $config->{verbose};
     $self->_log_error("[warning] ignored unknown config field: $_") for keys %$config;
     
+	$self->_call_trigger('on_construct');
     return $self;
 }
 
+sub _add_trigger {
+	my ($self, $point, $sub) = @_;
+	return unless $sub && ref $sub eq 'CODE';
+	$self->{_triggers}{$point} = $sub;
+}
+
+sub _call_trigger {
+	my ($self, $point, @args) = @_;
+	my $sub = $self->{_triggers}{$point};
+	return unless $sub;
+	my $response;
+	eval {
+		$response = &$sub($self, @args);
+	};
+	if ($@) {
+	    $self->_log_error("[warning] $point callback failed: $@");
+	} elsif ($response) {
+		$self->add_to_output( $response );
+	}
+}
+
+=head1 CALLBACKS
+
+Several trigger points are provided for the convenience of people who want to extend rather than replacing the normal behaviour of a tagfilter object. To use them, you just pass in a code reference with the appropriate name at construction time. 
+
+The example below will maintain a stack of seen tags and make the filter repair tag nesting, so that any unclosed tags are closed in roughly the right place, and any unopened close tags are omitted:
+
+  my $filter = HTML::TagFilter->new(
+	on_start_document => sub {
+		my ($self, $rawtext) = @_;
+		$self->{_tag_stack} = [];
+		return;
+	},
+	on_open_tag => sub {
+		my ($self, $tag, $attributes, $sequence) = @_;
+		push @{ $self->{_tag_stack} }, $$tag unless grep {$_ eq $$tag} qw(img br hr meta link);
+		return;
+	},
+	on_close_tag => sub {
+		my ($self, $tag) = @_;
+		unless (@{ $self->{_tag_stack} } && grep {$_ eq $$tag} @{ $self->{_tag_stack} }) {
+			undef ${ $tag };
+			return;
+		}
+		my @unclosed;
+		while (my $lasttag = pop @{ $self->{_tag_stack} })  {
+			return join '', map "</$_>", @unclosed if $lasttag eq $$tag;
+			push @unclosed, $lasttag;
+		}
+	},
+	on_finish_document => sub {
+		my ($self, $cleantext) = @_;
+		return join '', map "</$_>", @{ $self->{_tag_stack} };
+	},
+  );
+
+All of which would look a lot nicer if you used named subs instead. 
+
+The available trigger points are:
+
+=head3 on_construct ()
+
+This is called during construction of a new TagFilter object, just before the constructed object is returned. It receives no arguments apart from the tagfilter object.
+
+=head3 on_start_document ( $text )
+
+This is called by the filter() method, and passed a reference to the text that is to be filtered. You can change the text, or return any values that should be prepended to output.
+
+=head3 on_open_tag ( $tagname, $attributes, $attribute_sequence )
+
+This is called by the filter_start() method, with is the checker of opening and single tags. It is passed the same variables as that method uses: the name of the tag, a hashref containing all its attributes and a listref holding attribute names in order.
+
+Together with on_close_tag, this hook is very useful for adding document-tidying functions like tag closure, or for more sophisticated logging than tagfilter provides by itself.
+
+=head3 on_process_text ( $text )
+
+We normally just translate disallowed characters in text blocks, but this method receives a reference to the text string, so you can do what you like with it.
+
+Note that if you just want to add more disallowed characters, you can just subclass character_map().
+
+=head3 on_close_tag ( $text )
+
+This is called by the filter_end() method, which is the checker of closing tags. It is passed the closing tag name.
+
+=head3 on_finish_document ( $text )
+
+This is called by the output() method. It receives no arguments, or we get the output a bit tangled up, but whatever you return will be appended to the final output string.
+
 =head1 METHODS
 
-=over 4
+For reference:
 
-=item HTML::TagFilter->new();
+=head3 HTML::TagFilter->new();
 
 If called without parameters, loads the default set. Otherwise loads the rules you supply. For the rule format, see above.
 
-=item $tf->filter($html);
+=head2 FILTER METHODS
+
+These make up the main interface. You probably won't often need to call anything but filter().
+
+=head3 $tf->filter($html);
 
 Exactly equivalent to:
 
@@ -355,45 +464,44 @@ but more useful, because it'll fit in a oneliner. eg:
     
 Note that calling filter() will clear anything that was waiting in the output buffer, and will clear the buffer again when it's finished. it's meant to be a one-shot operation and doesn't co-operate well. use parse() and output() if you want to daisychain.
 
-=back
-
 =cut
 
 sub filter {
     my ($self, $text) = @_;
+    return unless $text;
+	$self->_call_trigger('on_start_document', \$text);
     $self->{output} = '';
     $self->parse($text);
     return $self->output unless $self->{_settings}->{echo};
 }
 
-=over 4
+=head3 parse($text);
 
-=item parse($text);
+The parse method is inherited from HTML::Parser, but most of its ancillary methods are subclassed here and the output they normally print is kept for later. The other configuration options that HTML::Parser normally offers are not passed on, at the moment, nor can you override the handler definitions in this module.
 
-The parse method is inherited from HTML::Parser, but most of its normal behaviours are subclassed here and the output they normally print is kept for later. The other configuration options that HTML::Parser normally offers are not passed on, at the moment, nor can you override the handler definitions in this module.
-
-=item output()
+=head3 output()
 
 This will return and clear the output buffer. It will conclude the processing of your text, but you can of course pass a new piece of text to the same parser object and begin again.
-
-=item report()
-
-If called in list context, returns the array of rejected tag/attribute/value combinations. 
-
-In scalar context returns a more or less readable summary. Returns () if logging not enabled. Clears the log.
-
-=back
 
 =cut
 
 sub output {
     my $self = shift;
     $self->eof;
+    $self->_call_trigger('on_finish_document');
     my $output = $self->{output};
     $self->_log_error("[warning] no output from filter") unless $output;
     $self->{output} = '';
     return $output;
 }
+
+=head3 report()
+
+If called in list context, returns the array of rejected tag/attribute/value combinations. 
+
+In scalar context returns a more or less readable summary. Returns () if logging not enabled. Clears the log.
+
+=cut
 
 sub report {
     my $self = shift;
@@ -402,7 +510,7 @@ sub report {
     $self->{_log} = ();
     return @rejects if wantarray;
 
-    my $report = "the following tags and attributes have been stripped:\n";
+    my $report = "The following tags and attributes have been stripped:\n";
     for (@rejects) {
         if ($_->{attribute}) {
             $report .= $_->{attribute} . '="' . $_->{value} . '" from the tag &lt;' . $_->{tag} . "&gt;";
@@ -415,27 +523,17 @@ sub report {
     return $report;
 }
 
-=over 4
-
-=item filter_start($tag, $attributes_hashref, $attribute_sequence_listref);
+=head3 filter_start($tag, $attributes_hashref, $attribute_sequence_listref);
 
 This is the handler for html start tags: it checks the tag against the current set of rules, then checks each attribute and its value. Any text that fails is stripped out: the rest is passed to output.
-
-=item filter_end($tag);
-
-This is the handler for html end tags: it checks the tag against the current set of rules, and passes it to output if it's ok.
-
-=item clean_text($text);
-
-This is the handler for text: anything which is not tag is passed through here before being passed to output. At the moment it only applies some very simple cross-site protection: subclassing this method is an easy way to modify just the text part of your page.
-
-=back
 
 =cut
 
 sub filter_start {
     my ($self, $tagname, $attributes, $attribute_sequence) = @_;
-    return unless $self->tag_ok(lc($tagname));
+    $self->_call_trigger('on_open_tag', \$tagname, $attributes, $attribute_sequence);
+    return unless $tagname && $self->tag_ok(lc($tagname));
+    
     for (@$attribute_sequence) {
         my @data = (lc($tagname), lc($_), lc($attributes->{$_}));      # (tag, attribute, value)
         delete $attributes->{$_} unless $self->attribute_ok(@data) && $self->url_ok(@data);
@@ -444,45 +542,71 @@ sub filter_start {
     $self->add_to_output("<$tagname$surviving_attributes>");
 }
 
+=head3 filter_end($tag);
+
+This is the handler for html end tags: it checks the tag against the current set of rules, and passes it to output if it's ok.
+
+=cut
+
 sub filter_end {
     my ($self, $tagname) = @_;
-    $self->add_to_output("</$tagname>") if $self->_tag_ok(lc($tagname));
+    $self->_call_trigger('on_close_tag', \$tagname);
+    $self->add_to_output( "</$tagname>" ) if $tagname && $self->_tag_ok(lc($tagname));
 }
+
+=head3 clean_text($text);
+
+This is the handler for text: anything which is not tag is passed through here before being passed to output. At the moment it only applies some very simple cross-site protection: subclassing this method is an easy way to modify just the text part of your page.
+
+=cut
 
 sub clean_text {
     my ($self, $text) = @_;
+	$self->_call_trigger('on_process_text', \$text);
     $self->add_to_output($self->_xss_clean_text($text));
 }
 
 sub _xss_clean_text {
     my ($self, $text) = @_;
     return $text unless $self->{_settings}->{xss};
-    return $text unless $self->{_settings}->{ltgt};
-    $text =~ s/>/&gt;/gs;
-    $text =~ s/</&lt;/gs;
+    return $text unless $self->{_settings}->{ent};
+    return $self->_clean_text($text);
+}
+
+sub _clean_text {
+    my ($self, $text) = @_;
+    my $filter = $self->character_map;
+    $text =~ s/$_/$$filter{$_}/gs for keys %$filter;
     return $text;
 }
 
-=over 4
+=head3 character_map($text);
 
-=item add_to_output($text);
+Returns a hashref of {disallowed_character => replacement_character} for use when cleaning text blocks.
+
+=cut
+
+sub character_map {
+    my $self = shift;
+    return $self->{_settings}->{charmap} = $_[0] if @_;
+    return $self->{_settings}->{charmap} if exists $self->{_settings}->{charmap};
+	return $self->{_settings}->{charmap} = {
+		'"' => '&quot;',
+		"'" => '&#39;',
+		'>' => '&gt;',
+		'<' => '&lt;',
+	};
+}
+
+=head3 add_to_output($text);
 
 The supplied text is appended to the output buffer (or immediately printed, if echo is on).
-
-=item logging($boolean);
-
-This provides get-or-set access to the 'log' configuration parameter. Switching logging on or off during parsing will result in incomplete reports, of course.
-
-=item log_denied($refused_tag);
-
-If logging is on, this method will append the supplied failure information to the log. The standard form for this is a hashref that will contain some or all of these keys: 'tag', 'attribute', 'value' and 'reason'.
-
-=back
 
 =cut
 
 sub add_to_output {
     my $self = shift;
+    return unless @_ && defined $_[0];
     if ($self->{_settings}->{echo}) {
         print $_[0];
     } else {
@@ -490,11 +614,23 @@ sub add_to_output {
     }
 }
 
+=head3 logging($boolean);
+
+This provides get-or-set access to the 'log' configuration parameter. Switching logging on or off during parsing will result in incomplete reports, of course.
+
+=cut
+
 sub logging {
     my $self = shift;
     $self->{_settings}->{log} = $_[0] if @_;
     return $self->{_settings}->{log};
 }
+
+=head3 log_denied($refused_tag);
+
+If logging is on, this method will append the supplied failure information to the log. The standard form for this is a hashref that will contain some or all of these keys: 'tag', 'attribute', 'value' and 'reason'.
+
+=cut
 
 sub log_denied {
     my ($self, $bad_tag) = @_;
@@ -502,21 +638,13 @@ sub log_denied {
     push @{ $self->{_log} } , $bad_tag;
 }
 
-=over 4
+=head2 RULE CHECKERS
 
-=item tag_ok($tag);
+Compare individual tags and attributes against the rule set currently in force. These simple methods are the core of tagfilter: most of the rest is configuration, and the filter methods are really just glue to connect these tests to HTML::Parser's progress through a document.
+
+=head3 tag_ok($tag);
 
 Returns true if the supplied tag name is allowed in the text. If not, returns false and logs the failure with the reason 'tag'.
-
-=item attribute_ok($tag, $attribute);
-
-Returns true if it that attribute is allowed for that tag, and it is allowed to have the supplied value. If not, returns false and logs the failure with the reason 'attribute'.
-
-=item url_ok($tag, $attributes, $value);
-
-If xss protection is on, we check whether this attribute is a url field, and if it is we check that the url is a url (rather than a script tag or some other naughtiness). Failures are logged with the reason 'url'.
-
-=back
 
 =cut
 
@@ -535,6 +663,12 @@ sub _tag_ok {
     return 1 if $self->_check('_allows', 'tags', $tagname);
     return 0;
 }
+
+=head3 attribute_ok($tag, $attribute);
+
+Returns true if it that attribute is allowed for that tag, and it is allowed to have the supplied value. If not, returns false and logs the failure with the reason 'attribute'.
+
+=cut
 
 sub attribute_ok {
     my ($self, $tagname, $attribute, $value) = @_;
@@ -559,6 +693,12 @@ sub _attribute_ok {
     return 0;
 }
 
+=head3 url_ok($tag, $attributes, $value);
+
+If xss protection is on, we check whether this attribute is a url field, and if it is we check that the url is a url (rather than a script tag or some other naughtiness). Failures are logged with the reason 'url'.
+
+=cut
+
 sub url_ok {
     my ($self, $tagname, $attribute, $value) = @_;    
     my $ok = $self->_url_ok( $attribute, $value );
@@ -580,10 +720,8 @@ sub _url_ok {
 sub _xss_clean_attribute {
     my ($self, $text, $attribute) = @_;
     return $text unless $self->{_settings}->{xss};
-	$text =~ s/"/&quot;/igs;
-	$text =~ s/'/&rsquot;/igs;
-    $text =~ s/>/&gt;/gs;
-    $text =~ s/</&lt;/gs;
+    my $filter = $self->character_map;
+    $text =~ s/$_/$$filter{$_}/gs for keys %$filter;
     return $self->_obfuscate_mailto($text) if $attribute eq 'href';
     return $text;
 }
@@ -627,35 +765,15 @@ sub _check {
     return 1;
 }
 
-=over 4
+=head2 configuration methods
 
-=item allow_tags($hashref)
+The configuration of the filter is held in a hash of hashes, usually referred to here as a hohoho as it usually has at least three levels. These methods expect to receive full or partial rule sets in the simplified form described above and merge them into - or drop them on top of - the active set.
+
+=head3 allow_tags($hashref)
 
 Takes a hashref of permissions and adds them to what we already have, replacing at the tag level where rules are already defined. In other words, you can add a tag to the existing set, but to add an attribute to an existing tag you have to specify the whole set of attribute permissions.  
 
 If no rules are sent (eg an empty hashref, or nothing at all, or a non-hashref) this clears the permission rule set.
-
-=item deny_tags($hashref)
-
-likewise but sets up (or clears) denial rules.
-
-=item has_rules()
-
-Returns true only if either allow or deny rules have been defined.
-
-=item has_allow_rules()
-
-Returns true if allow rules have been defined.
-
-=item has_deny_rules()
-
-Returns true if denial rules have been defined.
-
-=item clear_rules()
-
-Clears the entire rule set ready for the supply of a new set. A filter with no rules will clear everything, by the way.
-
-=back
 
 =cut
 
@@ -669,6 +787,12 @@ sub allow_tags {
     return 1;
 }
 
+=head3 deny_tags($hashref)
+
+likewise but sets up (or clears) denial rules.
+
+=cut
+
 sub deny_tags {
     my ($self, $tagset) = @_;
     if ($tagset && ref $tagset eq 'HASH' && %$tagset) {
@@ -679,11 +803,23 @@ sub deny_tags {
     return 1;
 }
 
+=head3 has_rules()
+
+Returns true only if either allow or deny rules have been defined.
+
+=cut
+
 sub has_rules {
     my $self = shift;
     return 1 if $self->has_allow_rules || $self->has_deny_rules;
     return 0;
 }
+
+=head3 has_allow_rules()
+
+Returns true if allow rules have been defined.
+
+=cut
 
 sub has_allow_rules {
     my $self = shift;
@@ -691,11 +827,23 @@ sub has_allow_rules {
     return 0;
 }
 
+=head3 has_deny_rules()
+
+Returns true if denial rules have been defined.
+
+=cut
+
 sub has_deny_rules {
     my $self = shift;
     return 1 if $self->{_denies} && %{ $self->{_denies} };
     return 0;
 }
+
+=head3 clear_rules()
+
+Clears the entire rule set ready for the supply of a new set. A filter with no rules will strip *all* html from supplied text, by the way.
+
+=cut
 
 sub clear_rules {
     my $self = shift;
@@ -733,17 +881,13 @@ sub _configurise {
     }
 }
 
-=over 4
+=head3 allows()
 
-=item allows()
+Returns the full set of permissions as a HoHoho. Can't be set this way: just a utility function in case you want to either display the rule set, or get the whole thing so you can send it back to allow_tags in a modified form.
 
-Returns the full set of permissions as a HoHoho. Can't be set this way: ust a utility function in case you want to either display the rule set, or send it back to allow_tags in a modified form.
-
-=item denies()
+=head3 denies()
 
 Likewise for denial rules.
-
-=back
 
 =cut
 
@@ -757,27 +901,15 @@ sub denies {
     return $self->{_denies};
 }
 
-=over 4
+=head2 XSS configuration
 
-=item xss_risky_attributes( @list_of_attributes );
+Cross-site scripting attacks are invented or identified all the time. We'll try and stay up to date, but you may be more paranoid or up to date than us: if so, just override one or more of these methods.
+
+=head3 xss_risky_attributes( @list_of_attributes );
 
 Sets and returns a list of attributes that are considered to be urls, and should be checked for well-formedness. 
 
 The default list is href, src, lowsrc, cite and background: any supplied values will be used to replace (not extend) this list.
-
-=item xss_permitted_protocols( @list_of_prefixes );
-
-Sets and returns a list of protocols that are acceptable in attributes that are considered to be urls. 
-
-The default list is http, https, lowsrc and mailto. Any supplied values will be used to replace (not extend) this list. Don't include the colon.
-
-=item xss_allow_local_links( $boolean );
-
-If this method returns a true value, then addresses that begin '/' or '../' will be accepted in url fields. 
-
-You can set this value by calling the method with a parameter, as usual. The default is true.
-
-=back
 
 =cut
 
@@ -788,12 +920,28 @@ sub xss_risky_attributes {
     return @{ $self->{_xss_att} } = qw(src href cite lowsrc background) ;
 }
 
+=head3 xss_permitted_protocols( @list_of_prefixes );
+
+Sets and returns a list of protocols that are acceptable in attributes that we considered to be urls (ie they're in the list returned by C<xss_risky_attributes>).
+
+The default list is http, https, ftp and mailto. Any supplied values will be used to replace (not extend) this list. Don't include the colon.
+
+=cut
+
 sub xss_permitted_protocols { 
     my $self = shift;
     return @{ $self->{_xss_stems} } = @_ if @_;
     return @{ $self->{_xss_stems} } if $self->{_xss_stems};
     return @{ $self->{_xss_stems} } = qw(http https mailto ftp) ;
 }
+
+=head3 xss_allow_local_links( $boolean );
+
+If this method returns a true value, then addresses that begin '/' or '../' will be accepted in url fields. 
+
+You can set this value by calling the method with a parameter, as usual. The default is true.
+
+=cut
 
 sub xss_allow_local_links { 
     my $self = shift;
@@ -802,13 +950,11 @@ sub xss_allow_local_links {
     return $self->{_xss_local} = 1;
 }
 
-=over 4
+=head3 error()
 
-=item error()
+Returns an error report of currently dubious usefulness. If you want to record error messages in subclass, call $self->_add_error(@messages). 
 
-Returns an error report of currently dubious usefulness.
-
-=back
+There is no class-level error logging mechanism at the moment, which is why the usefulness of this is rather limited.
 
 =cut
 
@@ -823,6 +969,7 @@ sub error {
 sub _log_error {
     my $self = shift;
     push @{ $self ->{_error} } , @_;
+    warn @_ if $self->{_settings}->{verbose};
 }
 
 # handler() exists here only to admonish people who try to use this module as they would
@@ -839,6 +986,8 @@ sub version {
 1;
 
 =head1 TO DO
+
+Make the documentation about half as long
 
 More sanity checks on incoming rules
 

@@ -3,5 +3,7 @@ Makefile.PL
 MANIFEST
 README
 TagFilter.pm
-test.pl
+t/01-filter.t
+t/02-xss.t
+t/03-extension.t
 META.yml                                Module meta-data (added by MakeMaker)

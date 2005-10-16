@@ -1,5 +1,11 @@
 Revision history for Perl extension HTML::TagFilter.
 
+1.0	  Sun Oct 15 2005
+	- handy hooks added in response to various requests for added 
+	  functionality. See spanner.org/tagfilter for recipes.
+	- documentation tidied up.
+	- No bug reports for a year now, so we'll call this version 1.
+
 0.091 Fri Aug 13 2004
     - silly bug fixed in mailto obfuscation (the mailto: part has to be left
       in clear, as any fule kno).
@@ -9,7 +15,7 @@ Revision history for Perl extension HTML::TagFilter.
     - url filtering properly integrated with other attribute rules, so that 
       naughty url attributes are omitted instead of empty.
     - xss logging brought into line with other filters, thanks to Brian Hirt.
-    - 'reason' value added to filter log, mostly  for later use
+    - 'reason' value added to filter log, mostly for later use
     - entification of <> now switchable-off too.
     - method documentation improved. rules docs still longer than bible :(
     - xss configuration (eg attributes to watch out for) made easier to change.

@@ -8,4 +8,7 @@ WriteMakefile(
         HTML::Parser => 1.0,
         URI::Escape => 0,
     },
+    dist => {
+    	TAR => "/sw/bin/tar", 
+    }
 );
