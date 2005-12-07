@@ -4,7 +4,7 @@ use base qw(HTML::Parser);
 use URI::Escape;
 use vars qw($VERSION);
 
-$VERSION = '1.01';
+$VERSION = '1.02';
 
 =head1 NAME
 
@@ -151,9 +151,7 @@ Disables the entification of < and > even if cross-site protection is on.
 
 =head3 skip_mailto_entification
 
-Unless you specify otherwise, any mailto:url seen by the filter is completely turned into html entities. <a href="mailto:wross@cpan.org">will</a> becomes <a href="%6D%61%69%6C%74%6F%3A%77%72%6F%73%73%40%63%70%61%6E%2E%6F%72%67">will</a>
-
-This should defeat most email-harvesting software, but note that it has no effect on the text of your link, only its address. Links like <a href="mailto:wross@cpan.org">wross@cpan.org</a> are only partly obscured.
+Unless you specify otherwise, any mailto:url seen by the filter is completely turned into html entities. <a href="mailto:wross@cpan.org">will</a> becomes <a href="mailto:%77%72%6F%73%73%40%63%70%61%6E%2E%6F%72%67">will</a>. This should defeat most email-harvesting software, but note that it has no effect on the text of your link, only its address. Links like <a href="mailto:wross@cpan.org">wross@cpan.org</a> are only partly obscured and should be avoided.
 
 =head3 other constructor parameters
 
@@ -354,22 +352,36 @@ sub new {
 
 sub _add_trigger {
 	my ($self, $point, $sub) = @_;
-	return unless $sub && ref $sub eq 'CODE';
-	$self->{_triggers}{$point} = $sub;
+	if ($sub && ref $sub eq 'CODE') {
+		$self->{_triggers}{$point} = $sub;
+	} else {
+		$self->{_triggers}{$point} = 1;
+		my $class = ref $self;
+    	no strict ('refs');
+		*{"HTML::TagFilter::$point"} = sub { return };
+	}
 }
 
 sub _call_trigger {
 	my ($self, $point, @args) = @_;
 	my $sub = $self->{_triggers}{$point};
-	return unless $sub;
-	my $response;
-	eval {
-		$response = &$sub($self, @args);
-	};
-	if ($@) {
-	    $self->_log_error("[warning] $point callback failed: $@");
-	} elsif ($response) {
-		$self->add_to_output( $response );
+	if ( $sub && ref $sub eq 'CODE') {
+		my $response;
+		eval {
+			$response = &$sub($self, @args);
+		};
+		if ($@) {
+			$self->_log_error("[warning] $point callback failed: $@");
+		} elsif ($response) {
+			$self->add_to_output( $response );
+		}
+		
+	} elsif ($sub) {
+		$self->$point(@args);
+		
+	} else {
+		my ($package, $filename, $line) = caller;
+		$self->_log_error("[warning] unknown trigger point '$point' called at $package line $line");
 	}
 }
 
@@ -408,7 +420,19 @@ The example below will maintain a stack of seen tags and make the filter repair 
 	},
   );
 
-All of which would look a lot nicer if you used named subs instead. 
+You can also fill these trigger points in subclass: If no callback method is supplied, we will call the class method of the same (triggerpoint) name instead. In this class those methods do nothing, so you can selectively override them without affecting normal functionality. To change all <b> tags to <strong> tags, for example:
+
+  sub on_open_tag {
+	my ($self, $tag, $attributes, $sequence) = @_;
+  	$$tag = 'strong' if $$tag eq 'b';
+  }
+
+  sub on_close_tag {
+	my ($self, $tag) = @_;
+  	$$tag = 'strong' if $$tag eq 'b';
+  }
+
+As you can see here The tag and attribute values are passed in as string references: changes you make in callback will change the tag itself.
 
 The available trigger points are:
 
@@ -714,7 +738,7 @@ sub _url_ok {
     my ($self, $attribute, $value) = @_;    
     return 1 unless $self->{_settings}->{xss};
 	return 1 unless $self->_is_risky($attribute);
-	return 1 if $self->xss_allow_local_links && $value =~ /^\//s || $value =~ /^\.\.\//s || $value !~ /:/s;
+	return 1 if $self->xss_allow_local_links && ($value =~ /^\.*\//s || $value !~ /:/s);
     return 1 if grep { $value =~ /^$_:/s } $self->xss_permitted_protocols;
     return 0;
 }
@@ -950,7 +974,7 @@ You can set this value by calling the method with a parameter, as usual. The def
 sub xss_allow_local_links { 
     my $self = shift;
     return $self->{_xss_local} = $_[0] if @_;
-    return $self->{_xss_local} if $self->{_xss_local};
+    return $self->{_xss_local} if defined $self->{_xss_local};
     return $self->{_xss_local} = 1;
 }
 

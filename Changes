@@ -1,5 +1,13 @@
 Revision history for Perl extension HTML::TagFilter.
 
+1.02  Wed Nov 7 2005
+	- callbacks will now call method of same (triggerpoint) name if no
+	  coderef has been supplied. This means that people who prefer to 
+	  override in subclass just need a method with the triggerpoint name.
+	- fixed silly bug where setting xss_allow_local_links to zero was ignored
+	- fixed very silly operator precedence bug in xss test for local urls. 
+	  (Both these last two thanks to kolya@mail.ru)
+
 1.01  Sun Oct 15 2005
     - tweaked trigger points so that tag acceptability tests are called
       first: avoids situations where the callback sub is doing something
@@ -32,7 +40,7 @@ Revision history for Perl extension HTML::TagFilter.
       that is not explicitly denied. Makes it easier to strip out a few tags and
       leave the rest.
     - bugfix: supplying an empty set of rules to allow_tags or deny_tags now
-      clears that part of the rule set, as the documentation promises.
+      clears that part of the rule set, as the docs promise.
     - clear_rules method added to simplify the interface.
     - Tests now use Test::More like proper grown-ups.
 
