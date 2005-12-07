@@ -1,5 +1,8 @@
 Revision history for Perl extension HTML::TagFilter.
 
+1.03  Wed Nov 7 2005
+	- updated manifest to include new tests and test subclass module. d'oh.
+
 1.02  Wed Nov 7 2005
 	- callbacks will now call method of same (triggerpoint) name if no
 	  coderef has been supplied. This means that people who prefer to 
