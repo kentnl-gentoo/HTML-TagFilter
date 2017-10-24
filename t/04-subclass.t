@@ -2,6 +2,7 @@ package main;
 
 use strict;
 use Test::More;
+use lib 't/lib';
 use My::Filter;
 
 BEGIN {
